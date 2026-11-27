@@ -1,3 +1,4 @@
+
 import streamlit as st
 
 from modules.navegacion import configurar_navegacion
@@ -14,7 +15,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Navegación corporativa
 configurar_navegacion()
 
 
@@ -35,24 +35,8 @@ st.markdown("""
     margin-bottom: 28px;
 }
 
-.plant-card-number {
-    font-size: 13px;
-    font-weight: bold;
-    letter-spacing: 2px;
-    margin-bottom: 15px;
-}
-
-.plant-card-name {
-    font-size: 23px;
-    font-weight: 750;
-    margin-top: 12px;
-    margin-bottom: 5px;
-}
-
-.plant-card-location {
-    font-size: 14px;
-    color: #64748B;
-    margin-top: 8px;
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 14px;
 }
 
 </style>
@@ -93,7 +77,7 @@ plantas = {
 
 
 # =====================================================
-# 4. CONTROL DE SELECCIÓN
+# 4. ESTADO DE SELECCIÓN
 # =====================================================
 
 if "planta_seleccionada" not in st.session_state:
@@ -111,18 +95,13 @@ def seleccionar_planta(nombre):
 st.title("Análisis por planta")
 
 st.markdown(
-    """
-    <div class="plant-description">
-        Selecciona una planta para consultar sus indicadores
-        y analizar el comportamiento de sus materias primas.
-    </div>
-    """,
+    '<div class="plant-description">Selecciona una planta para consultar sus indicadores y analizar el comportamiento de sus materias primas.</div>',
     unsafe_allow_html=True
 )
 
 
 # =====================================================
-# 6. SELECCIÓN DE PLANTAS
+# 6. TARJETAS DE SELECCIÓN
 # =====================================================
 
 if st.session_state.planta_seleccionada is None:
@@ -135,39 +114,35 @@ if st.session_state.planta_seleccionada is None:
 
             with st.container(border=True):
 
-                # Tarjeta visual de cada planta
-                html_tarjeta = f"""<div style="
-                    background-color: {datos['fondo']};
-                    padding: 22px;
-                    border-radius: 12px;
-                    margin-bottom: 15px;
-                    min-height: 215px;
-                ">
-                    <div class="plant-card-number"
-                         style="color: {datos['color']};">
-                        PLANTA {datos['numero']}
-                    </div>
+                # HTML construido sin saltos de línea
+                html_tarjeta = (
+                    f'<div style="background-color:{datos["fondo"]};'
+                    f'padding:22px;border-radius:12px;'
+                    f'margin-bottom:15px;min-height:215px;">'
 
-                    <div style="font-size: 38px;">
-                        {datos['icono']}
-                    </div>
+                    f'<div style="font-size:13px;font-weight:bold;'
+                    f'letter-spacing:2px;color:{datos["color"]};">'
+                    f'PLANTA {datos["numero"]}</div>'
 
-                    <div class="plant-card-name"
-                         style="color: {datos['color']};">
-                        {nombre}
-                    </div>
+                    f'<div style="font-size:38px;margin-top:15px;">'
+                    f'{datos["icono"]}</div>'
 
-                    <div class="plant-card-location">
-                        {datos['ubicacion']}
-                    </div>
-                </div>"""
+                    f'<div style="font-size:23px;font-weight:750;'
+                    f'color:{datos["color"]};margin-top:10px;">'
+                    f'{nombre}</div>'
+
+                    f'<div style="font-size:14px;color:#64748B;'
+                    f'margin-top:8px;">'
+                    f'{datos["ubicacion"]}</div>'
+
+                    f'</div>'
+                )
 
                 st.markdown(
                     html_tarjeta,
                     unsafe_allow_html=True
                 )
 
-                # Botón de ingreso
                 st.button(
                     "Ver análisis de planta →",
                     key=f"btn_{nombre}",
@@ -186,7 +161,6 @@ else:
     nombre = st.session_state.planta_seleccionada
     datos = plantas[nombre]
 
-    # Botón para regresar
     st.button(
         "← Volver a selección de plantas",
         on_click=seleccionar_planta,
@@ -195,40 +169,27 @@ else:
 
     st.divider()
 
-    # Encabezado de planta
-    encabezado_planta = f"""<div style="
-        background-color: {datos['fondo']};
-        padding: 28px;
-        border-radius: 12px;
-        border-left: 6px solid {datos['color']};
-    ">
-        <div style="
-            font-size: 13px;
-            font-weight: bold;
-            color: {datos['color']};
-            letter-spacing: 2px;
-        ">
-            ANÁLISIS INDIVIDUAL
-        </div>
+    # Encabezado individual
+    encabezado = (
+        f'<div style="background-color:{datos["fondo"]};'
+        f'padding:28px;border-radius:12px;'
+        f'border-left:6px solid {datos["color"]};">'
 
-        <div style="
-            font-size: 30px;
-            font-weight: 750;
-            color: {datos['color']};
-            margin-top: 8px;
-        ">
-            {nombre}
-        </div>
+        f'<div style="font-size:13px;font-weight:bold;'
+        f'color:{datos["color"]};letter-spacing:2px;">'
+        f'ANÁLISIS INDIVIDUAL</div>'
 
-        <div style="color: #64748B; margin-top: 5px;">
-            {datos['ubicacion']} | Enaex Chile
-        </div>
-    </div>"""
+        f'<div style="font-size:30px;font-weight:750;'
+        f'color:{datos["color"]};margin-top:8px;">'
+        f'{nombre}</div>'
 
-    st.markdown(
-        encabezado_planta,
-        unsafe_allow_html=True
+        f'<div style="color:#64748B;margin-top:5px;">'
+        f'{datos["ubicacion"]} | Enaex Chile</div>'
+
+        f'</div>'
     )
+
+    st.markdown(encabezado, unsafe_allow_html=True)
 
     st.write("")
 
@@ -237,33 +198,19 @@ else:
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric(
-        "Materias primas",
-        "—",
-        help="Cantidad de materias primas registradas."
-    )
-
-    col2.metric(
-        "Nivel de servicio",
-        "—",
-        help="Indicador de nivel de servicio de la planta."
-    )
-
-    col3.metric(
-        "Cobertura promedio",
-        "—",
-        help="Cobertura promedio del inventario."
-    )
+    col1.metric("Materias primas", "—")
+    col2.metric("Nivel de servicio", "—")
+    col3.metric("Cobertura promedio", "—")
 
     st.divider()
 
-    # Análisis de inventario
+    # Inventario
     st.subheader("Análisis de inventario")
 
     st.info(
-        "En esta sección incorporaremos los indicadores "
-        "de stock actual, stock de seguridad, stock máximo, "
-        "stock óptimo y cobertura de inventario."
+        "En esta sección incorporaremos stock actual, "
+        "stock de seguridad, stock máximo, stock óptimo "
+        "y cobertura de inventario."
     )
 
     st.divider()
@@ -301,15 +248,10 @@ else:
 # 8. PIE DE PÁGINA
 # =====================================================
 
-st.markdown("""
-<div style="
-    text-align: center;
-    color: #8492A6;
-    font-size: 12px;
-    margin-top: 45px;
-    padding: 15px;
-">
-    ENAEX CHILE | Dashboard de gestión de materias primas
-</div>
-""", unsafe_allow_html=True)
-
+st.markdown(
+    '<div style="text-align:center;color:#8492A6;'
+    'font-size:12px;margin-top:45px;padding:15px;">'
+    'ENAEX CHILE | Dashboard de gestión de materias primas'
+    '</div>',
+    unsafe_allow_html=True
+)
