@@ -521,51 +521,64 @@ datos["Importe"] = convertir_numero(
 )
 
 
+
 # =====================================================
 # 10. CRUCE CON EL MAESTRO DE PROVEEDORES
 # =====================================================
 
-# Excel precios:
-# Proveedor = código.
+# Excel de precios:
+# Columna Proveedor = código del proveedor.
 #
 # MRP:
-# Acreedor = código.
-# Proveedor = nombre.
+# Columna Acreedor = código del proveedor.
+# Columna Proveedor = nombre del proveedor.
+
+# Renombrar la columna del maestro para evitar
+# conflictos con la columna Proveedor del Excel de precios.
+
+maestro_proveedores_limpio = maestro_proveedores.rename(
+    columns={
+        "Proveedor": "Nombre proveedor"
+    }
+).copy()
+
+# Realizar el cruce utilizando los códigos.
 
 datos = datos.merge(
-    maestro_proveedores,
+    maestro_proveedores_limpio,
     left_on="Codigo proveedor",
     right_on="Acreedor",
     how="left"
 )
 
-# Guardar códigos sin coincidencia.
+# Identificar códigos que no encontraron coincidencia.
 
 proveedores_sin_match = (
     datos.loc[
-        datos["Proveedor"].isna(),
+        datos["Nombre proveedor"].isna(),
         "Codigo proveedor"
     ]
     .drop_duplicates()
     .tolist()
 )
 
+# Si no existe coincidencia, conservar una referencia
+# al código para identificar el registro.
+
 datos["Nombre proveedor"] = (
-    datos["Proveedor"]
-    .fillna(
+    datos["Nombre proveedor"].fillna(
         datos["Codigo proveedor"].apply(
             lambda x: f"Proveedor no encontrado ({x})"
         )
     )
 )
 
-# Eliminar columnas auxiliares del cruce.
+# Eliminar columna auxiliar del cruce.
 
 datos = datos.drop(
-    columns=["Acreedor", "Proveedor"],
+    columns=["Acreedor"],
     errors="ignore"
 )
-
 
 # =====================================================
 # 11. CRUCE CON EL MAESTRO DE MATERIALES
