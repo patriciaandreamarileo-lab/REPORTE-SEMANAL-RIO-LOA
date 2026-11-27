@@ -1,11 +1,10 @@
-import hmac
 import streamlit as st
+import pandas as pd
+import plotly.express as px
 
-from modules.github_storage import (
-    subir_archivo_github,
-    descargar_archivo_github,
-    comprobar_conexion
-)
+from io import BytesIO
+from modules.navegacion import configurar_navegacion
+from modules.github_storage import descargar_archivo_github
 
 
 # =====================================================
@@ -13,31 +12,20 @@ from modules.github_storage import (
 # =====================================================
 
 st.set_page_config(
-    page_title="Administración | Enaex",
-    page_icon="🔐",
+    page_title="Análisis Río Loa | Enaex",
+    page_icon="🏭",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+configurar_navegacion()
+
 RUTA_MRP = "data/MRP/Planificacion_MRP.xlsm"
+CENTRO_RIO_LOA = "E024"
 
 
 # =====================================================
-# 2. ESTADOS DE SESIÓN
-# =====================================================
-
-if "admin_autenticada" not in st.session_state:
-    st.session_state.admin_autenticada = False
-
-if "mrp_uploader_version" not in st.session_state:
-    st.session_state.mrp_uploader_version = 0
-
-if "mrp_actualizado" not in st.session_state:
-    st.session_state.mrp_actualizado = False
-
-
-# =====================================================
-# 3. DISEÑO
+# 2. ESTILOS
 # =====================================================
 
 st.markdown("""
@@ -47,22 +35,35 @@ st.markdown("""
     background-color: #F4F7FB;
 }
 
-.admin-header {
-    background: linear-gradient(110deg, #123454, #24669A);
-    padding: 28px;
-    border-radius: 12px;
-    margin-bottom: 25px;
-    color: white;
+.plant-description {
+    color: #64748B;
+    font-size: 16px;
+    margin-bottom: 20px;
 }
 
-.admin-header h2 {
-    color: white;
-    margin-bottom: 5px;
+div[data-testid="stMetric"] {
+    background: white;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid #E2E8F0;
 }
 
-.admin-header p {
-    color: #DCEAF7;
-    margin-bottom: 0;
+.alerta-roja {
+    background-color: #FEE2E2;
+    border-left: 6px solid #DC2626;
+    color: #991B1B;
+    padding: 18px;
+    border-radius: 9px;
+    margin: 12px 0;
+}
+
+.alerta-verde {
+    background-color: #DCFCE7;
+    border-left: 6px solid #16A34A;
+    color: #166534;
+    padding: 18px;
+    border-radius: 9px;
+    margin: 12px 0;
 }
 
 </style>
@@ -70,372 +71,977 @@ st.markdown("""
 
 
 # =====================================================
-# 4. ENCABEZADO
+# 3. CARGAR MRP DESDE GITHUB
 # =====================================================
 
-st.markdown("""
-<div class="admin-header">
-    <h2>Panel de administración</h2>
-    <p>ENAEX CHILE | Gestión y actualización de archivos</p>
-</div>
-""", unsafe_allow_html=True)
+@st.cache_data(ttl=60)
+def cargar_datos_mrp():
 
+    contenido = descargar_archivo_github(RUTA_MRP)
 
-# =====================================================
-# 5. MENSAJE DE ACTUALIZACIÓN
-# =====================================================
-
-if st.session_state.mrp_actualizado:
-
-    st.success(
-        "¡El archivo MRP fue actualizado y verificado "
-        "correctamente en GitHub!"
-    )
-
-    st.info(
-        "La sesión de administración se ha cerrado "
-        "automáticamente. Para realizar otra actualización "
-        "debes ingresar nuevamente la contraseña."
-    )
-
-    st.session_state.mrp_actualizado = False
-
-
-# =====================================================
-# 6. CONTROL DE ACCESO
-# =====================================================
-
-if not st.session_state.admin_autenticada:
-
-    st.subheader("Acceso de administradoras")
-
-    st.write(
-        "Ingresa la contraseña para habilitar la carga "
-        "y actualización del archivo MRP."
-    )
-
-    with st.form("formulario_acceso"):
-
-        password = st.text_input(
-            "Contraseña de administración",
-            type="password"
+    if contenido is None:
+        raise Exception(
+            "No se encontró el archivo MRP en GitHub."
         )
 
-        ingresar = st.form_submit_button(
-            "Ingresar",
-            use_container_width=True
+    archivo = BytesIO(contenido)
+
+    df_original = pd.read_excel(
+        archivo,
+        sheet_name="NS",
+        header=None,
+        engine="openpyxl"
+    )
+
+    # Buscar automáticamente la fila de encabezados
+
+    fila_encabezado = None
+
+    for i in range(len(df_original)):
+
+        valores = (
+            df_original.iloc[i]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .tolist()
         )
 
-    if ingresar:
+        if (
+            "CENTRO" in valores
+            and "MATERIAL" in valores
+            and "DESCRIPCIÓN DEL MATERIAL" in valores
+        ):
 
-        try:
+            fila_encabezado = i
+            break
 
-            password_correcta = st.secrets["ADMIN_PASSWORD"]
+    if fila_encabezado is None:
 
-            if hmac.compare_digest(
-                password,
-                password_correcta
-            ):
+        raise Exception(
+            "No se encontraron los encabezados "
+            "Centro, Material y Descripción del material."
+        )
 
-                st.session_state.admin_autenticada = True
-                st.rerun()
+    df = df_original.iloc[
+        fila_encabezado + 1:
+    ].copy()
 
-            else:
+    df.columns = (
+        df_original.iloc[fila_encabezado]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
 
-                st.error("Contraseña incorrecta.")
+    df = df.dropna(how="all")
 
-        except Exception as error:
-
-            st.error(
-                f"No fue posible validar el acceso: {error}"
-            )
-
-    st.stop()
+    return df.reset_index(drop=True)
 
 
 # =====================================================
-# 7. PANEL AUTORIZADO
+# 4. OBTENER INFORMACIÓN DEL MRP
 # =====================================================
 
-col1, col2 = st.columns([4, 1])
+# Botón para actualizar los datos manualmente
 
-with col1:
+col_actualizar, col_estado = st.columns([1, 3])
 
-    st.success("Acceso de administración habilitado.")
-
-with col2:
+with col_actualizar:
 
     if st.button(
-        "Cerrar sesión",
+        "🔄 Actualizar datos",
         use_container_width=True
     ):
 
-        st.session_state.admin_autenticada = False
+        st.cache_data.clear()
         st.rerun()
 
 
-st.divider()
-
-
-# =====================================================
-# 8. CONEXIÓN CON GITHUB
-# =====================================================
-
-st.subheader("Almacenamiento de archivos")
-
 try:
 
-    conexion = comprobar_conexion()
+    datos_mrp = cargar_datos_mrp()
 
-    if conexion:
+    if datos_mrp.empty:
 
-        st.success("Conexión con GitHub establecida.")
-
-    else:
-
-        st.error("No fue posible conectar con GitHub.")
-
+        st.error("El MRP no contiene registros.")
         st.stop()
 
 except Exception as error:
 
-    st.error(f"Error de conexión: {error}")
+    st.error(
+        f"No fue posible cargar el MRP desde GitHub: {error}"
+    )
+
     st.stop()
 
 
+# =====================================================
+# 5. PREPARACIÓN Y LIMPIEZA DE DATOS
+# =====================================================
+
+datos_mrp.columns = [
+    str(columna).strip()
+    for columna in datos_mrp.columns
+]
+
+columnas_requeridas = [
+    "Centro",
+    "Material",
+    "Descripción del material",
+    "MMPP Activa",
+    "NS"
+]
+
+faltantes = [
+    columna
+    for columna in columnas_requeridas
+    if columna not in datos_mrp.columns
+]
+
+if faltantes:
+
+    st.error(
+        "Faltan columnas necesarias en la hoja NS: "
+        + ", ".join(faltantes)
+    )
+
+    st.stop()
+
+
+datos_mrp = datos_mrp.dropna(
+    subset=["Centro", "Material"]
+).copy()
+
+
+# Normalizar centro
+
+datos_mrp["Centro"] = (
+    datos_mrp["Centro"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
+
+
+# Normalizar material
+
+datos_mrp["Material"] = (
+    datos_mrp["Material"]
+    .astype(str)
+    .str.strip()
+    .str.replace(r"\.0$", "", regex=True)
+)
+
+
+# Limpiar descripciones
+
+datos_mrp["Descripción del material"] = (
+    datos_mrp["Descripción del material"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+)
+
+
+# Convertir columnas numéricas
+
+columnas_numericas = [
+    "Riesgo MMPP",
+    "Consumo X̄",
+    "Stock Actual",
+    "Stock Óptimo",
+    "Stock Seguridad",
+    "Stock Máximo",
+    "Cob. [Meses]",
+    "Cobertura a [Días]",
+    "Sobrestock [%]"
+]
+
+for columna in columnas_numericas:
+
+    if columna in datos_mrp.columns:
+
+        datos_mrp[columna] = pd.to_numeric(
+            datos_mrp[columna],
+            errors="coerce"
+        )
+
+
+# Normalizar clasificaciones
+
+for columna in ["NS", "NS Corregido"]:
+
+    if columna in datos_mrp.columns:
+
+        datos_mrp[columna] = (
+            datos_mrp[columna]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+
+
+# =====================================================
+# 6. FILTRAR EXCLUSIVAMENTE RÍO LOA
+# =====================================================
+
+datos = datos_mrp[
+    datos_mrp["Centro"] == CENTRO_RIO_LOA
+].copy()
+
+
+if datos.empty:
+
+    st.error(
+        "No se encontraron registros del centro E024 "
+        "en la hoja NS del MRP."
+    )
+
+    st.stop()
+
+
+# Materias primas activas
+
+datos_activos = datos[
+    datos["MMPP Activa"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+    .isin(["SI", "SÍ"])
+].copy()
+
+
+if datos_activos.empty:
+
+    st.warning(
+        "No se encontraron materias primas activas para Río Loa."
+    )
+
+
+# =====================================================
+# 7. FUNCIONES AUXILIARES
+# =====================================================
+
+def formato_numero(valor, decimales=0):
+
+    if pd.isna(valor):
+        return "—"
+
+    return (
+        f"{valor:,.{decimales}f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+
+def calcular_nivel_servicio(df):
+
+    if (
+        "Riesgo MMPP" not in df.columns
+        or "NS" not in df.columns
+    ):
+
+        return None
+
+    riesgo = pd.to_numeric(
+        df["Riesgo MMPP"],
+        errors="coerce"
+    ).fillna(0)
+
+    clasificacion = (
+        df["NS"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    riesgo_eb = riesgo[clasificacion == "EB"].sum()
+    riesgo_sb = riesgo[clasificacion == "SB"].sum()
+    riesgo_bb = riesgo[clasificacion == "BB"].sum()
+
+    total = riesgo_eb + riesgo_sb + riesgo_bb
+
+    if total <= 0:
+        return None
+
+    return (
+        (riesgo_eb + 0.5 * riesgo_sb)
+        / total
+    ) * 100
+
+
+def mostrar_tabla(df, columnas, decimales=None):
+
+    disponibles = [
+        columna
+        for columna in columnas
+        if columna in df.columns
+    ]
+
+    if not disponibles:
+
+        st.info("No hay información disponible.")
+        return
+
+    vista = df[disponibles].copy()
+
+    formatos = {}
+
+    for columna, decimales_col in (decimales or {}).items():
+
+        if columna in vista.columns:
+
+            formatos[columna] = (
+                lambda x, d=decimales_col:
+                formato_numero(x, d)
+            )
+
+    st.dataframe(
+        vista.style.format(
+            formatos,
+            na_rep="—"
+        ),
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# =====================================================
+# 8. ENCABEZADO
+# =====================================================
+
+st.title("Análisis por planta")
+
+st.markdown(
+    '<div class="plant-description">'
+    'Análisis de planificación, inventario y nivel de servicio '
+    'de materias primas de Río Loa.'
+    '</div>',
+    unsafe_allow_html=True
+)
+
+
+encabezado = """
+<div style="
+    background-color:#E6EFF9;
+    padding:28px;
+    border-radius:12px;
+    border-left:6px solid #245A91;
+">
+
+    <div style="
+        font-size:13px;
+        font-weight:bold;
+        color:#245A91;
+        letter-spacing:2px;
+    ">
+        ANÁLISIS INDIVIDUAL
+    </div>
+
+    <div style="
+        font-size:30px;
+        font-weight:750;
+        color:#245A91;
+        margin-top:8px;
+    ">
+        RÍO LOA
+    </div>
+
+    <div style="color:#64748B;margin-top:5px;">
+        Calama | Enaex Chile | Centro E024
+    </div>
+
+</div>
+"""
+
+st.markdown(
+    encabezado,
+    unsafe_allow_html=True
+)
+
+st.write("")
+
+
+# =====================================================
+# 9. INDICADORES GENERALES
+# =====================================================
+
+st.subheader("Indicadores de la planta")
+
+cantidad_materiales = len(datos_activos)
+
+nivel_servicio = calcular_nivel_servicio(
+    datos_activos
+)
+
+if "Cobertura a [Días]" in datos_activos.columns:
+
+    coberturas = datos_activos[
+        "Cobertura a [Días]"
+    ].dropna()
+
+    cobertura_promedio = (
+        coberturas.mean()
+        if not coberturas.empty
+        else None
+    )
+
+else:
+
+    cobertura_promedio = None
+
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric(
+    "Materias primas activas",
+    formato_numero(cantidad_materiales)
+)
+
+col2.metric(
+    "Nivel de servicio",
+    f"{nivel_servicio:.1f}%"
+    if nivel_servicio is not None
+    else "—"
+)
+
+col3.metric(
+    "Cobertura promedio",
+    f"{cobertura_promedio:.1f} días"
+    if cobertura_promedio is not None
+    else "—"
+)
+
+st.caption(
+    "Información obtenida de la hoja NS del último MRP "
+    "almacenado en GitHub."
+)
+
 st.divider()
 
 
 # =====================================================
-# 9. ACTUALIZACIÓN DEL ARCHIVO MRP
+# 10. DISTRIBUCIÓN BB, EB Y SB
 # =====================================================
 
-st.subheader("Actualización del archivo MRP")
+st.subheader("Distribución del nivel de servicio")
 
-st.write(
-    "Carga aquí el archivo de planificación MRP. "
-    "El sistema reemplazará la versión anterior "
-    "almacenada en GitHub."
-)
-
-archivo_mrp = st.file_uploader(
-    "Seleccionar archivo MRP",
-    type=["xlsm"],
-    accept_multiple_files=False,
-    key=f"archivo_mrp_{st.session_state.mrp_uploader_version}",
-    help="Selecciona el archivo Excel MRP con extensión .xlsm."
+st.markdown(
+    "Participación de las materias primas según su "
+    "clasificación NS corregida."
 )
 
 
-if archivo_mrp is not None:
+if "NS Corregido" in datos_activos.columns:
 
-    st.write(
-        "**Archivo seleccionado:**",
-        archivo_mrp.name
+    clasificaciones = (
+        datos_activos["NS Corregido"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.upper()
     )
 
-    contenido_original = archivo_mrp.getvalue()
-
-    tamano_mb = len(contenido_original) / (1024 * 1024)
-
-    st.write(
-        f"**Tamaño:** {tamano_mb:.2f} MB"
+    conteo = (
+        clasificaciones[
+            clasificaciones.isin(["BB", "EB", "SB"])
+        ]
+        .value_counts()
+        .reindex(
+            ["BB", "EB", "SB"],
+            fill_value=0
+        )
     )
 
-    if tamano_mb >= 90:
+    if conteo.sum() > 0:
 
-        st.error(
-            "El archivo supera el límite permitido "
-            "para esta implementación."
+        grafico = pd.DataFrame({
+
+            "Clasificación": ["BB", "EB", "SB"],
+
+            "Cantidad": [
+                int(conteo["BB"]),
+                int(conteo["EB"]),
+                int(conteo["SB"])
+            ]
+
+        })
+
+        grafico["Porcentaje"] = (
+            grafico["Cantidad"]
+            / grafico["Cantidad"].sum()
+            * 100
         )
 
-    elif not archivo_mrp.name.lower().endswith(".xlsm"):
+        colores = {
+            "BB": "#E32636",
+            "EB": "#16A34A",
+            "SB": "#078BCE"
+        }
 
-        st.error("Debes seleccionar un archivo .xlsm.")
+        fig = px.pie(
+            grafico,
+            names="Clasificación",
+            values="Cantidad",
+            color="Clasificación",
+            color_discrete_map=colores,
+            hole=0,
+            custom_data=["Porcentaje"]
+        )
+
+        fig.update_traces(
+
+            textposition="inside",
+
+            texttemplate="%{customdata[0]:.1f}%",
+
+            textfont=dict(
+                size=18,
+                color="white"
+            ),
+
+            hovertemplate=(
+                "<b>%{label}</b><br>"
+                "Materias primas: %{value}<br>"
+                "Participación: %{customdata[0]:.1f}%"
+                "<extra></extra>"
+            )
+
+        )
+
+        fig.update_layout(
+
+            height=430,
+
+            showlegend=True,
+
+            legend_title_text="Clasificación NS",
+
+            margin=dict(
+                t=20,
+                b=20,
+                l=20,
+                r=20
+            ),
+
+            paper_bgcolor="#FFFFFF",
+            plot_bgcolor="#FFFFFF"
+
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric("BB", int(conteo["BB"]))
+        c2.metric("EB", int(conteo["EB"]))
+        c3.metric("SB", int(conteo["SB"]))
 
     else:
 
-        st.warning(
-            "Al confirmar, el archivo MRP anterior "
-            "será reemplazado por el nuevo."
+        st.info(
+            "No existen materias primas clasificadas como BB, EB o SB."
         )
 
-        confirmar = st.checkbox(
-            "Confirmo que deseo reemplazar el MRP almacenado."
-        )
+else:
 
-        if st.button(
-            "Actualizar archivo MRP",
-            type="primary",
-            use_container_width=True,
-            disabled=not confirmar
-        ):
+    st.warning(
+        "No se encontró la columna NS Corregido."
+    )
 
-            try:
-
-                with st.spinner(
-                    "Guardando y verificando el archivo en GitHub..."
-                ):
-
-                    # Subir y reemplazar archivo
-                    subir_archivo_github(
-                        archivo_mrp,
-                        RUTA_MRP
-                    )
-
-                    # Descargar nuevamente desde GitHub
-                    archivo_verificado = descargar_archivo_github(
-                        RUTA_MRP
-                    )
-
-                    # Comprobar que el archivo se guardó correctamente
-                    if archivo_verificado is None:
-
-                        raise Exception(
-                            "GitHub no devolvió el archivo guardado."
-                        )
-
-                    if archivo_verificado != contenido_original:
-
-                        raise Exception(
-                            "El archivo descargado no coincide "
-                            "con el archivo que se intentó subir."
-                        )
-
-                # Cerrar sesión automáticamente
-                st.session_state.admin_autenticada = False
-
-                # Generar una nueva clave para el cargador
-                st.session_state.mrp_uploader_version += 1
-
-                # Mostrar confirmación después del rerun
-                st.session_state.mrp_actualizado = True
-
-                st.rerun()
-
-            except Exception as error:
-
-                st.error(
-                    f"No fue posible actualizar el MRP: {error}"
-                )
-
-
-# =====================================================
-# 10. CONSULTAR ARCHIVO ALMACENADO
-# =====================================================
 
 st.divider()
 
-st.subheader("Archivo MRP almacenado")
 
-st.write(
-    "Puedes comprobar si existe un archivo MRP "
-    "guardado actualmente en GitHub."
+# =====================================================
+# 11. CINCO MATERIAS PRIMAS CON MENOR STOCK
+# =====================================================
+
+st.subheader("5 materias primas con menor stock")
+
+st.markdown(
+    "Materias primas activas ordenadas desde el menor "
+    "stock actual."
 )
 
-if st.button(
-    "Consultar archivo actual",
-    use_container_width=True
+
+if "Stock Actual" in datos_activos.columns:
+
+    menor_stock = datos_activos.dropna(
+        subset=["Stock Actual"]
+    ).copy()
+
+    menor_stock = menor_stock.sort_values(
+        "Stock Actual",
+        ascending=True
+    ).head(5)
+
+    if not menor_stock.empty:
+
+        mostrar_tabla(
+            menor_stock,
+
+            [
+                "Material",
+                "Descripción del material",
+                "UM",
+                "Stock Actual",
+                "Stock Seguridad",
+                "Stock Óptimo",
+                "NS Corregido"
+            ],
+
+            {
+                "Stock Actual": 2,
+                "Stock Seguridad": 2,
+                "Stock Óptimo": 2
+            }
+        )
+
+    else:
+
+        st.info("No hay información de stock disponible.")
+
+else:
+
+    st.warning("No se encontró Stock Actual.")
+
+
+st.divider()
+
+
+# =====================================================
+# 12. CINCO MATERIAS PRIMAS CON MENOR CONSUMO
+#     Y MAYOR COBERTURA
+# =====================================================
+
+st.subheader(
+    "5 materias primas con menor consumo y mayor cobertura"
+)
+
+st.markdown(
+    "Se identifican las materias primas de menor consumo "
+    "promedio y, dentro de ese grupo, aquellas con mayor "
+    "cobertura de inventario."
+)
+
+
+if (
+    "Consumo X̄" in datos_activos.columns
+    and "Cobertura a [Días]" in datos_activos.columns
 ):
 
-    try:
+    bajo_consumo = datos_activos.dropna(
+        subset=[
+            "Consumo X̄",
+            "Cobertura a [Días]"
+        ]
+    ).copy()
 
-        with st.spinner("Consultando GitHub..."):
+    if not bajo_consumo.empty:
 
-            archivo_guardado = descargar_archivo_github(
-                RUTA_MRP
-            )
+        limite_consumo = bajo_consumo[
+            "Consumo X̄"
+        ].quantile(0.50)
 
-        if archivo_guardado is not None:
+        bajo_consumo = bajo_consumo[
+            bajo_consumo["Consumo X̄"] <= limite_consumo
+        ].copy()
 
-            st.success(
-                "Existe un archivo MRP almacenado en GitHub."
-            )
+        bajo_consumo = bajo_consumo.sort_values(
+            [
+                "Cobertura a [Días]",
+                "Consumo X̄"
+            ],
+            ascending=[False, True]
+        ).head(5)
 
-            tamano_guardado = (
-                len(archivo_guardado) / (1024 * 1024)
-            )
+        if not bajo_consumo.empty:
 
-            st.metric(
-                "Tamaño del archivo almacenado",
-                f"{tamano_guardado:.2f} MB"
+            mostrar_tabla(
+                bajo_consumo,
+
+                [
+                    "Material",
+                    "Descripción del material",
+                    "UM",
+                    "Consumo X̄",
+                    "Stock Actual",
+                    "Cobertura a [Días]",
+                    "Cob. [Meses]"
+                ],
+
+                {
+                    "Consumo X̄": 2,
+                    "Stock Actual": 2,
+                    "Cobertura a [Días]": 1,
+                    "Cob. [Meses]": 2
+                }
             )
 
         else:
 
-            st.warning(
-                "Todavía no se ha cargado ningún archivo MRP."
+            st.info(
+                "No hay materias primas disponibles para este análisis."
             )
 
-    except Exception as error:
+    else:
 
-        st.error(
-            f"No fue posible consultar el archivo: {error}"
+        st.info(
+            "No hay datos suficientes de consumo y cobertura."
         )
 
+else:
 
-# =====================================================
-# 11. VERIFICACIÓN DE DATOS DEL MRP
-# =====================================================
+    st.warning(
+        "Faltan las columnas de consumo o cobertura en el MRP."
+    )
+
 
 st.divider()
 
-st.subheader("Verificación de datos del MRP")
-
-if st.button(
-    "Leer hoja NS del MRP",
-    use_container_width=True
-):
-
-    try:
-
-        from modules.mrp_reader import obtener_resumen_mrp
-
-        with st.spinner(
-            "Leyendo archivo MRP desde GitHub..."
-        ):
-
-            resultado = obtener_resumen_mrp()
-
-        st.success(
-            "La hoja NS se leyó correctamente."
-        )
-
-        st.metric(
-            "Cantidad de registros",
-            resultado["cantidad_registros"]
-        )
-
-        st.write(
-            "**Hojas del archivo:**",
-            resultado["hojas"]
-        )
-
-        st.write("**Columnas encontradas:**")
-
-        st.write(resultado["columnas"])
-
-        st.write("**Vista previa de la hoja NS:**")
-
-        st.dataframe(
-            resultado["datos"].head(15),
-            use_container_width=True,
-            hide_index=True
-        )
-
-    except Exception as error:
-
-        st.error(
-            f"Error al leer el MRP: {error}"
-        )
-
 
 # =====================================================
-# 12. PIE DE PÁGINA
+# 13. ALERTAS DE COBERTURA INFERIOR A 10 DÍAS
 # =====================================================
+
+st.subheader(
+    "Alerta de materias primas con cobertura crítica"
+)
+
+
+if "Cobertura a [Días]" in datos_activos.columns:
+
+    cobertura_critica = datos_activos[
+        datos_activos["Cobertura a [Días]"].notna()
+        &
+        (
+            datos_activos["Cobertura a [Días]"] < 10
+        )
+    ].copy()
+
+    cobertura_critica = cobertura_critica.sort_values(
+        "Cobertura a [Días]",
+        ascending=True
+    )
+
+    if not cobertura_critica.empty:
+
+        st.markdown(
+
+            f'<div class="alerta-roja">'
+            f'<strong>ATENCIÓN: COBERTURA CRÍTICA</strong><br><br>'
+            f'Se identificaron {len(cobertura_critica)} materias primas '
+            f'con menos de 10 días de cobertura. '
+            f'Requieren revisión prioritaria para prevenir '
+            f'posibles quiebres de stock.'
+            f'</div>',
+
+            unsafe_allow_html=True
+        )
+
+        mostrar_tabla(
+            cobertura_critica,
+
+            [
+                "Material",
+                "Descripción del material",
+                "UM",
+                "Stock Actual",
+                "Consumo X̄",
+                "Cobertura a [Días]",
+                "NS",
+                "NS Corregido"
+            ],
+
+            {
+                "Stock Actual": 2,
+                "Consumo X̄": 2,
+                "Cobertura a [Días]": 1
+            }
+        )
+
+    else:
+
+        st.markdown(
+
+            '<div class="alerta-verde">'
+            '<strong>SIN ALERTAS CRÍTICAS</strong><br><br>'
+            'No se identificaron materias primas activas '
+            'con menos de 10 días de cobertura.'
+            '</div>',
+
+            unsafe_allow_html=True
+        )
+
+else:
+
+    st.warning(
+        "No se encontró la columna Cobertura a [Días]."
+    )
+
 
 st.divider()
 
-st.caption(
-    "ENAEX CHILE | Panel exclusivo de administración"
+
+# =====================================================
+# 14. ANÁLISIS INDIVIDUAL DE MATERIAS PRIMAS
+# =====================================================
+
+st.subheader(
+    "Análisis individual de materias primas"
+)
+
+st.markdown(
+    "Busca una materia prima por código o descripción "
+    "para consultar sus indicadores."
+)
+
+
+if not datos_activos.empty:
+
+    catalogo = datos_activos.copy()
+
+    # Crear catálogo único de materiales.
+    # Se conserva el código como identificador interno.
+
+    catalogo = catalogo.drop_duplicates(
+        subset=["Material"]
+    ).copy()
+
+    # Construir opciones con código y descripción.
+
+    opciones_materiales = [
+        (
+            str(fila["Material"]),
+            str(fila["Descripción del material"])
+        )
+        for _, fila in catalogo.iterrows()
+    ]
+
+    if opciones_materiales:
+
+        seleccion = st.selectbox(
+
+            "Buscar materia prima",
+
+            options=opciones_materiales,
+
+            format_func=lambda material: (
+                f"{material[0]} — {material[1]}"
+            ),
+
+            index=None,
+
+            placeholder="Buscar por código o nombre del material...",
+
+            key="selector_material_rio_loa"
+
+        )
+
+        if seleccion is not None:
+
+            codigo_seleccionado = seleccion[0]
+
+            material = catalogo[
+                catalogo["Material"] == codigo_seleccionado
+            ].iloc[0]
+
+            st.write("")
+
+            st.markdown(
+                f"### {material['Descripción del material']}"
+            )
+
+            st.caption(
+                f"Código de material: {material['Material']}"
+            )
+
+            c1, c2, c3 = st.columns(3)
+
+            c1.metric(
+                "Consumo promedio",
+                formato_numero(
+                    material.get("Consumo X̄"),
+                    2
+                )
+            )
+
+            c2.metric(
+                "Stock actual",
+                formato_numero(
+                    material.get("Stock Actual"),
+                    2
+                )
+            )
+
+            cobertura = material.get("Cobertura a [Días]")
+
+            c3.metric(
+                "Cobertura",
+                f"{cobertura:.1f} días"
+                if pd.notna(cobertura)
+                else "—"
+            )
+
+            c4, c5, c6 = st.columns(3)
+
+            c4.metric(
+                "Riesgo MMPP",
+                formato_numero(
+                    material.get("Riesgo MMPP")
+                )
+            )
+
+            c5.metric(
+                "Clasificación NS",
+                str(material.get("NS", "—"))
+            )
+
+            c6.metric(
+                "NS Corregido",
+                str(material.get("NS Corregido", "—"))
+            )
+
+            comentario = material.get("Comentario")
+
+            if (
+                pd.notna(comentario)
+                and str(comentario).strip()
+            ):
+
+                st.write("**Comentario del MRP**")
+
+                st.info(str(comentario))
+
+    else:
+
+        st.info("No existen materiales para seleccionar.")
+
+else:
+
+    st.info(
+        "No hay materias primas activas para consultar."
+    )
+
+
+# =====================================================
+# 15. PIE DE PÁGINA
+# =====================================================
+
+st.markdown(
+    '<div style="text-align:center;color:#8492A6;'
+    'font-size:12px;margin-top:45px;padding:15px;">'
+    'ENAEX CHILE | REPORTE DE GESTIÓN DE MATERIAS PRIMAS'
+    ' | RÍO LOA'
+    '</div>',
+    unsafe_allow_html=True
 )
