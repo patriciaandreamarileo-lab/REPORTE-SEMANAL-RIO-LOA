@@ -136,8 +136,7 @@ def cargar_mrp():
             )
 
         # Buscar la fila que contiene los encabezados reales
-        indice_encabezados = buscar_fila_encabezados(
-            filas
+        indice_encabezados = buscar_fila_encabezados(filas
         )
 
         fila_encabezados = filas[indice_encabezados]
