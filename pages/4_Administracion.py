@@ -1,10 +1,12 @@
+
 import streamlit as st
 import hmac
 
 from modules.github_storage import (
     subir_archivo_github,
     descargar_archivo_github,
-    comprobar_conexion
+    comprobar_conexion,
+    obtener_info_archivo
 )
 
 
@@ -17,6 +19,8 @@ st.set_page_config(
     page_icon="🔐",
     layout="wide"
 )
+
+RUTA_MRP = "data/MRP/Planificacion_MRP.xlsm"
 
 
 # =====================================================
@@ -69,6 +73,7 @@ st.markdown("""
 # =====================================================
 
 if "admin_autenticada" not in st.session_state:
+
     st.session_state.admin_autenticada = False
 
 
@@ -106,6 +111,7 @@ if not st.session_state.admin_autenticada:
             st.rerun()
 
         else:
+
             st.error("Contraseña incorrecta.")
 
     st.stop()
@@ -118,10 +124,16 @@ if not st.session_state.admin_autenticada:
 col1, col2 = st.columns([4, 1])
 
 with col1:
+
     st.success("Acceso de administración habilitado.")
 
 with col2:
-    if st.button("Cerrar sesión", use_container_width=True):
+
+    if st.button(
+        "Cerrar sesión",
+        use_container_width=True
+    ):
+
         st.session_state.admin_autenticada = False
         st.rerun()
 
@@ -130,21 +142,23 @@ st.divider()
 
 
 # =====================================================
-# 6. ESTADO DE CONEXIÓN CON GITHUB
+# 6. CONEXIÓN CON GITHUB
 # =====================================================
 
 st.subheader("Almacenamiento de archivos")
 
 try:
 
-    conexion = comprobar_conexion()
+    if comprobar_conexion():
 
-    if conexion:
         st.success("Conexión con GitHub establecida.")
+
     else:
+
         st.error("No fue posible conectar con GitHub.")
 
 except Exception as error:
+
     st.error(f"Error de conexión: {error}")
 
 
@@ -152,14 +166,15 @@ st.divider()
 
 
 # =====================================================
-# 7. CARGA DEL MRP
+# 7. ACTUALIZACIÓN DEL MRP
 # =====================================================
 
 st.subheader("Actualización del archivo MRP")
 
 st.write(
     "Carga aquí el archivo de planificación MRP. "
-    "El sistema guardará la nueva versión en GitHub."
+    "La nueva versión reemplazará el archivo almacenado "
+    "en GitHub y estará disponible para el dashboard."
 )
 
 archivo_mrp = st.file_uploader(
@@ -181,19 +196,20 @@ if archivo_mrp is not None:
     if tamano_mb >= 90:
 
         st.error(
-            "El archivo es demasiado grande para "
-            "esta implementación de GitHub."
+            "El archivo es demasiado grande "
+            "para esta implementación."
         )
 
     else:
 
         st.warning(
-            "Al confirmar, el archivo MRP anterior "
-            "será reemplazado por el nuevo."
+            "Al confirmar, el MRP anterior será "
+            "reemplazado por el nuevo."
         )
 
         confirmar = st.checkbox(
-            "Confirmo que deseo reemplazar el MRP almacenado."
+            "Confirmo que deseo reemplazar el MRP almacenado.",
+            key="confirmar_reemplazo_mrp"
         )
 
         if st.button(
@@ -205,109 +221,173 @@ if archivo_mrp is not None:
 
             try:
 
-                with st.spinner("Guardando archivo en GitHub..."):
+                with st.spinner(
+                    "Subiendo y verificando el archivo en GitHub..."
+                ):
 
-                    subir_archivo_github(
+                    resultado = subir_archivo_github(
                         archivo_mrp,
-                        "data/MRP/Planificacion_MRP.xlsm"
+                        RUTA_MRP
                     )
 
+                    # Limpiar caché del lector MRP
+
+                    from modules.mrp_reader import cargar_mrp
+
+                    cargar_mrp.clear()
+
+                st.session_state["mrp_actualizado"] = True
+                st.session_state["mrp_resultado"] = resultado
+
                 st.success(
-                    "¡El archivo MRP se almacenó correctamente!"
+                    "¡El MRP fue actualizado y verificado correctamente!"
+                )
+
+                st.write("**Ruta:**", resultado["ruta"])
+
+                st.write(
+                    "**SHA del archivo:**",
+                    resultado["sha_archivo"]
+                )
+
+                st.write(
+                    "**SHA del commit:**",
+                    resultado["sha_commit"]
+                )
+
+                st.write(
+                    "**Tamaño almacenado:**",
+                    f'{resultado["tamano"] / (1024 * 1024):.2f} MB'
                 )
 
                 st.info(
                     "La nueva versión ya está disponible "
-                    "para ser procesada por el dashboard."
+                    "en GitHub. La caché del lector MRP "
+                    "también fue limpiada."
                 )
 
             except Exception as error:
 
                 st.error(
-                    f"No fue posible actualizar el archivo: {error}"
+                    f"No fue posible actualizar el MRP: {error}"
                 )
+
+
+st.divider()
 
 
 # =====================================================
 # 8. CONSULTAR ARCHIVO ALMACENADO
 # =====================================================
 
-st.divider()
-
 st.subheader("Archivo MRP almacenado")
 
-if st.button("Consultar archivo actual"):
+if st.button(
+    "Consultar archivo actual",
+    use_container_width=True
+):
 
     try:
 
-        archivo_guardado = descargar_archivo_github(
-            "data/MRP/Planificacion_MRP.xlsm"
-        )
+        informacion = obtener_info_archivo(RUTA_MRP)
 
-        if archivo_guardado is not None:
+        if informacion is not None:
 
-            st.success("Existe un archivo MRP almacenado.")
+            st.success(
+                "Se encontró el archivo MRP en GitHub."
+            )
 
             st.write(
-                f"Tamaño almacenado: "
-                f"{len(archivo_guardado) / (1024 * 1024):.2f} MB"
+                "**Nombre:**",
+                informacion.get("name")
+            )
+
+            st.write(
+                "**Ruta:**",
+                informacion.get("path")
+            )
+
+            st.write(
+                "**Tamaño:**",
+                f'{informacion.get("size", 0) / (1024 * 1024):.2f} MB'
+            )
+
+            st.write(
+                "**SHA actual:**",
+                informacion.get("sha")
+            )
+
+            st.write(
+                "**Última actualización:**",
+                informacion.get("git_url")
+            )
+
+            st.write(
+                "**Último commit:**",
+                informacion.get("html_url")
             )
 
         else:
 
-            st.info(
-                "Todavía no se ha cargado ningún archivo MRP."
+            st.warning(
+                "No existe ningún archivo MRP en la ruta indicada."
             )
 
     except Exception as error:
 
         st.error(
-            f"No fue posible consultar el archivo: {error}"
+            f"No fue posible consultar GitHub: {error}"
         )
 
 
-# =====================================================
-# 9. PIE DE PÁGINA
-# =====================================================
-
 st.divider()
 
-st.caption(
-    "ENAEX CHILE | Panel exclusivo de administración"
-)
 
 # =====================================================
-# 10. PRUEBA DE LECTURA DEL MRP
+# 9. VERIFICACIÓN DE DATOS DEL MRP
 # =====================================================
-
-st.divider()
 
 st.subheader("Verificación de datos del MRP")
 
-if st.button("Leer hoja NS del MRP"):
+if st.button(
+    "Leer hoja NS del MRP",
+    use_container_width=True
+):
 
     try:
 
-        from modules.mrp_reader import obtener_resumen_mrp
+        from modules.mrp_reader import (
+            cargar_mrp,
+            obtener_resumen_mrp
+        )
 
-        with st.spinner("Leyendo archivo MRP desde GitHub..."):
+        with st.spinner(
+            "Descargando y leyendo la última versión del MRP..."
+        ):
+
+            cargar_mrp.clear()
 
             resultado = obtener_resumen_mrp()
 
-        st.success("La hoja NS se leyó correctamente.")
+        st.success(
+            "La hoja NS se leyó correctamente."
+        )
 
         st.write(
-            "Cantidad de registros:",
+            "**Cantidad de registros:**",
             resultado["cantidad_registros"]
         )
 
-        st.write("Hojas del archivo:", resultado["hojas"])
+        st.write(
+            "**Hojas del archivo:**",
+            resultado["hojas"]
+        )
 
-        st.write("Columnas encontradas:")
+        st.write("**Columnas encontradas:**")
 
         st.write(resultado["columnas"])
 
-        st.write("Vista previa de la hoja NS:")
+        st.write("**Vista previa de la hoja NS:**")
 
         st.dataframe(
             resultado["datos"].head(15),
@@ -316,4 +396,17 @@ if st.button("Leer hoja NS del MRP"):
 
     except Exception as error:
 
-        st.error(f"Error al leer el MRP: {error}")
+        st.error(
+            f"Error al leer el MRP: {error}"
+        )
+
+
+# =====================================================
+# 10. PIE DE PÁGINA
+# =====================================================
+
+st.divider()
+
+st.caption(
+    "ENAEX CHILE | Panel exclusivo de administración"
+)
