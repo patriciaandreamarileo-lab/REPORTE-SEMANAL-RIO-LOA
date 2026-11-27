@@ -24,7 +24,6 @@ configurar_navegacion()
 # =====================================================
 
 plantas = {
-
     "RIO LOA": {
         "numero": "01",
         "ubicacion": "Calama",
@@ -33,7 +32,6 @@ plantas = {
         "fondo": "#E6EFF9",
         "icono": "🏭"
     },
-
     "PRILLEX": {
         "numero": "02",
         "ubicacion": "Mejillones",
@@ -42,7 +40,6 @@ plantas = {
         "fondo": "#E5F1E9",
         "icono": "🏭"
     },
-
     "PUNTA TEATINOS": {
         "numero": "03",
         "ubicacion": "La Serena",
@@ -51,7 +48,6 @@ plantas = {
         "fondo": "#F5EDE3",
         "icono": "🏭"
     }
-
 }
 
 
@@ -122,6 +118,11 @@ except Exception as e:
 
 datos_mrp = datos_mrp.copy()
 
+datos_mrp.columns = [
+    str(c).strip()
+    for c in datos_mrp.columns
+]
+
 datos_mrp["Centro"] = (
     datos_mrp["Centro"]
     .astype(str)
@@ -133,8 +134,6 @@ datos_mrp["Material"] = (
     .astype(str)
     .str.strip()
 )
-
-# Convertir columnas numéricas.
 
 columnas_numericas = [
     "Riesgo MMPP",
@@ -158,7 +157,7 @@ for columna in columnas_numericas:
         )
 
 
-# Normalizar clasificación NS.
+# Normalizar clasificaciones
 
 for columna in ["NS", "NS Corregido"]:
 
@@ -166,6 +165,7 @@ for columna in ["NS", "NS Corregido"]:
 
         datos_mrp[columna] = (
             datos_mrp[columna]
+            .fillna("")
             .astype(str)
             .str.strip()
             .str.upper()
@@ -173,7 +173,7 @@ for columna in ["NS", "NS Corregido"]:
 
 
 # =====================================================
-# 6. FUNCIONES DE CÁLCULO
+# 6. FUNCIONES
 # =====================================================
 
 def obtener_activos(df):
@@ -188,17 +188,6 @@ def obtener_activos(df):
 
 
 def calcular_nivel_servicio(df):
-
-    """
-    Cálculo ponderado según la clasificación NS
-    y el riesgo MMPP.
-
-    EB = 100%
-    SB = 50%
-    BB = 0%
-
-    La ponderación utiliza Riesgo MMPP.
-    """
 
     if df.empty:
         return None
@@ -350,7 +339,7 @@ else:
 
 
     # -------------------------------------------------
-    # 10.1 FILTRAR INFORMACIÓN DEL MRP POR CENTRO
+    # 10.1 FILTRAR INFORMACIÓN DEL MRP
     # -------------------------------------------------
 
     datos = datos_mrp[
@@ -365,9 +354,6 @@ else:
         )
 
         st.stop()
-
-
-    # Materias primas activas.
 
     datos_activos = obtener_activos(datos)
 
@@ -435,7 +421,6 @@ else:
 
         cobertura_promedio = None
 
-
     col1, col2, col3 = st.columns(3)
 
     col1.metric(
@@ -468,118 +453,236 @@ else:
 
     st.divider()
 
-# =================================================
-# ALERTAS Y OBSERVACIONES DEL MRP
-# =================================================
 
-st.subheader("Alertas y observaciones")
+    # =================================================
+    # 12. ALERTAS Y OBSERVACIONES
+    # =================================================
 
-st.markdown(
-    "Seguimiento de las materias primas según su "
-    "clasificación NS corregida y los comentarios registrados."
-)
+    st.subheader("Alertas y observaciones")
 
-if "NS Corregido" in datos_activos.columns:
-
-    # Clasificación corregida
-    clasificaciones = (
-        datos_activos["NS Corregido"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
+    st.markdown(
+        "Distribución de las materias primas según su "
+        "clasificación NS corregida y seguimiento de "
+        "los comentarios registrados en el MRP."
     )
 
-    col1, col2, col3 = st.columns(3)
+    if "NS Corregido" in datos_activos.columns:
 
-    col1.metric(
-        "Clasificación EB",
-        int((clasificaciones == "EB").sum())
-    )
-
-    col2.metric(
-        "Clasificación BB",
-        int((clasificaciones == "BB").sum())
-    )
-
-    col3.metric(
-        "Clasificación SB",
-        int((clasificaciones == "SB").sum())
-    )
-
-    # Identificar registros que requieren seguimiento
-    alertas = datos_activos[
-        clasificaciones.isin(["BB", "SB"])
-    ].copy()
-
-    if not alertas.empty:
-
-        columnas_alertas = [
-            "Material",
-            "Descripción del material",
-            "NS",
-            "NS Corregido",
-            "Comentario"
-        ]
-
-        columnas_disponibles = [
-            c for c in columnas_alertas
-            if c in alertas.columns
-        ]
-
-        alertas = alertas[columnas_disponibles]
-
-        def colorear_alerta(valor):
-
-            if str(valor).upper() == "BB":
-                return (
-                    "background-color: #FEE2E2;"
-                    "color: #991B1B;"
-                    "font-weight: bold;"
-                )
-
-            if str(valor).upper() == "SB":
-                return (
-                    "background-color: #CFFAFE;"
-                    "color: #155E75;"
-                    "font-weight: bold;"
-                )
-
-            if str(valor).upper() == "EB":
-                return (
-                    "background-color: #DCFCE7;"
-                    "color: #166534;"
-                    "font-weight: bold;"
-                )
-
-            return ""
-
-        st.dataframe(
-            alertas.style.map(
-                colorear_alerta,
-                subset=["NS Corregido"]
-            ),
-            use_container_width=True,
-            hide_index=True
+        clasificaciones = (
+            datos_activos["NS Corregido"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.upper()
         )
+
+        # Conteo de clasificaciones
+
+        conteo = (
+            clasificaciones[
+                clasificaciones.isin(["BB", "EB", "SB"])
+            ]
+            .value_counts()
+            .reindex(["BB", "EB", "SB"], fill_value=0)
+        )
+
+        total_clasificados = int(conteo.sum())
+
+        # Indicadores de clasificación
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric(
+            "Clasificación EB",
+            int(conteo["EB"])
+        )
+
+        col2.metric(
+            "Clasificación BB",
+            int(conteo["BB"])
+        )
+
+        col3.metric(
+            "Clasificación SB",
+            int(conteo["SB"])
+        )
+
+        st.write("")
+
+        # -------------------------------------------------
+        # GRÁFICO DE TORTA
+        # -------------------------------------------------
+
+        st.markdown("### Distribución de materias primas")
+
+        if total_clasificados > 0:
+
+            datos_grafico = pd.DataFrame({
+                "Clasificación": ["BB", "EB", "SB"],
+                "Cantidad": [
+                    int(conteo["BB"]),
+                    int(conteo["EB"]),
+                    int(conteo["SB"])
+                ]
+            })
+
+            especificacion = {
+
+                "mark": {
+                    "type": "arc",
+                    "innerRadius": 0,
+                    "outerRadius": 115,
+                    "stroke": "white",
+                    "strokeWidth": 2
+                },
+
+                "encoding": {
+
+                    "theta": {
+                        "field": "Cantidad",
+                        "type": "quantitative"
+                    },
+
+                    "color": {
+                        "field": "Clasificación",
+                        "type": "nominal",
+                        "scale": {
+                            "domain": ["BB", "EB", "SB"],
+                            "range": [
+                                "#DC2626",
+                                "#16A34A",
+                                "#0891B2"
+                            ]
+                        },
+                        "legend": {
+                            "title": "Clasificación NS",
+                            "orient": "right"
+                        }
+                    },
+
+                    "tooltip": [
+                        {
+                            "field": "Clasificación",
+                            "type": "nominal",
+                            "title": "Clasificación"
+                        },
+                        {
+                            "field": "Cantidad",
+                            "type": "quantitative",
+                            "title": "Materias primas"
+                        }
+                    ]
+                },
+
+                "view": {
+                    "stroke": None
+                },
+
+                "width": "container",
+                "height": 300
+            }
+
+            st.vega_lite_chart(
+                datos_grafico,
+                especificacion,
+                use_container_width=True
+            )
+
+            st.caption(
+                f"Total de materias primas clasificadas: "
+                f"{total_clasificados}"
+            )
+
+        else:
+
+            st.info(
+                "No existen materias primas clasificadas "
+                "como EB, BB o SB para esta planta."
+            )
+
+
+        # -------------------------------------------------
+        # LISTADO DE ALERTAS
+        # -------------------------------------------------
+
+        st.markdown("### Materias primas que requieren seguimiento")
+
+        alertas = datos_activos[
+            clasificaciones.isin(["BB", "SB"])
+        ].copy()
+
+        if not alertas.empty:
+
+            columnas_alertas = [
+                "Material",
+                "Descripción del material",
+                "NS",
+                "NS Corregido",
+                "Comentario"
+            ]
+
+            columnas_disponibles = [
+                c for c in columnas_alertas
+                if c in alertas.columns
+            ]
+
+            alertas = alertas[columnas_disponibles]
+
+            def colorear_alerta(valor):
+
+                if str(valor).upper() == "BB":
+
+                    return (
+                        "background-color: #FEE2E2;"
+                        "color: #991B1B;"
+                        "font-weight: bold;"
+                    )
+
+                if str(valor).upper() == "SB":
+
+                    return (
+                        "background-color: #CFFAFE;"
+                        "color: #155E75;"
+                        "font-weight: bold;"
+                    )
+
+                if str(valor).upper() == "EB":
+
+                    return (
+                        "background-color: #DCFCE7;"
+                        "color: #166534;"
+                        "font-weight: bold;"
+                    )
+
+                return ""
+
+            st.dataframe(
+                alertas.style.map(
+                    colorear_alerta,
+                    subset=["NS Corregido"]
+                ),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        else:
+
+            st.success(
+                "No se registran materiales clasificados "
+                "como BB o SB."
+            )
 
     else:
 
-        st.success(
-            "No se registran materiales clasificados "
-            "como BB o SB."
+        st.warning(
+            "No se encontró la columna NS Corregido en el MRP."
         )
 
-else:
-
-    st.warning(
-        "No se encontró la columna NS Corregido en el MRP."
-    )
-
-st.divider()
+    st.divider()
 
 
     # =================================================
-    # 12. MATERIAS PRIMAS CRÍTICAS
+    # 13. MATERIAS PRIMAS CRÍTICAS
     # =================================================
 
     st.subheader("Materias primas críticas")
@@ -642,7 +745,7 @@ st.divider()
 
 
     # =================================================
-    # 13. ANÁLISIS INDIVIDUAL DE MATERIAS PRIMAS
+    # 14. ANÁLISIS INDIVIDUAL DE MATERIAS PRIMAS
     # =================================================
 
     st.subheader(
@@ -726,13 +829,15 @@ st.divider()
                 )
             )
 
+            cobertura_material = material_seleccionado.get(
+                "Cobertura a [Días]"
+            )
+
             c3.metric(
                 "Cobertura",
                 (
-                    f"{material_seleccionado['Cobertura a [Días]']:.1f} días"
-                    if pd.notna(
-                        material_seleccionado["Cobertura a [Días]"]
-                    )
+                    f"{cobertura_material:.1f} días"
+                    if pd.notna(cobertura_material)
                     else "—"
                 )
             )
@@ -761,6 +866,7 @@ st.divider()
             if (
                 "Comentario" in material_seleccionado.index
                 and pd.notna(material_seleccionado["Comentario"])
+                and str(material_seleccionado["Comentario"]).strip()
             ):
 
                 st.write("**Comentario del MRP**")
@@ -784,7 +890,7 @@ st.divider()
 
 
 # =====================================================
-# 14. PIE DE PÁGINA
+# 15. PIE DE PÁGINA
 # =====================================================
 
 st.markdown(
