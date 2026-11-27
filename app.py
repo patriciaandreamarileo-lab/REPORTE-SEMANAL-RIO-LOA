@@ -1,4 +1,3 @@
-
 import streamlit as st
 
 # ==========================================
@@ -25,6 +24,11 @@ st.markdown("""
 
 [data-testid="stSidebar"] {
     background-color: #102B46;
+}
+
+/* Ocultar navegación automática de Streamlit */
+[data-testid="stSidebarNav"] {
+    display: none;
 }
 
 [data-testid="stSidebar"] * {
