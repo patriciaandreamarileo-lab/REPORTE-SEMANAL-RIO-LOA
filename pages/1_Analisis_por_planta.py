@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 
@@ -468,6 +467,115 @@ else:
     )
 
     st.divider()
+
+# =================================================
+# ALERTAS Y OBSERVACIONES DEL MRP
+# =================================================
+
+st.subheader("Alertas y observaciones")
+
+st.markdown(
+    "Seguimiento de las materias primas según su "
+    "clasificación NS corregida y los comentarios registrados."
+)
+
+if "NS Corregido" in datos_activos.columns:
+
+    # Clasificación corregida
+    clasificaciones = (
+        datos_activos["NS Corregido"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Clasificación EB",
+        int((clasificaciones == "EB").sum())
+    )
+
+    col2.metric(
+        "Clasificación BB",
+        int((clasificaciones == "BB").sum())
+    )
+
+    col3.metric(
+        "Clasificación SB",
+        int((clasificaciones == "SB").sum())
+    )
+
+    # Identificar registros que requieren seguimiento
+    alertas = datos_activos[
+        clasificaciones.isin(["BB", "SB"])
+    ].copy()
+
+    if not alertas.empty:
+
+        columnas_alertas = [
+            "Material",
+            "Descripción del material",
+            "NS",
+            "NS Corregido",
+            "Comentario"
+        ]
+
+        columnas_disponibles = [
+            c for c in columnas_alertas
+            if c in alertas.columns
+        ]
+
+        alertas = alertas[columnas_disponibles]
+
+        def colorear_alerta(valor):
+
+            if str(valor).upper() == "BB":
+                return (
+                    "background-color: #FEE2E2;"
+                    "color: #991B1B;"
+                    "font-weight: bold;"
+                )
+
+            if str(valor).upper() == "SB":
+                return (
+                    "background-color: #CFFAFE;"
+                    "color: #155E75;"
+                    "font-weight: bold;"
+                )
+
+            if str(valor).upper() == "EB":
+                return (
+                    "background-color: #DCFCE7;"
+                    "color: #166534;"
+                    "font-weight: bold;"
+                )
+
+            return ""
+
+        st.dataframe(
+            alertas.style.map(
+                colorear_alerta,
+                subset=["NS Corregido"]
+            ),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    else:
+
+        st.success(
+            "No se registran materiales clasificados "
+            "como BB o SB."
+        )
+
+else:
+
+    st.warning(
+        "No se encontró la columna NS Corregido en el MRP."
+    )
+
+st.divider()
 
 
     # =================================================
