@@ -1,4 +1,3 @@
-
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -294,33 +293,39 @@ datos_activos["NS"] = (
 )
 
 
+
 # =====================================================
 # 9. ENCABEZADO DE RÍO LOA
 # =====================================================
 
-st.markdown("""
-<div class="plant-header">
-
-    <div style="
-        font-size:13px;
-        font-weight:bold;
-        letter-spacing:2px;
-        color:#DCEAF7;
-    ">
-        ANÁLISIS INDIVIDUAL
-    </div>
-
-    <h2>RÍO LOA</h2>
-
-    <p>Calama | Enaex Chile | Centro E024</p>
-
+st.markdown(
+    """
+<div style="
+    background: linear-gradient(110deg, #123454, #24669A);
+    padding: 28px;
+    border-radius: 14px;
+    margin-bottom: 20px;
+    color: white;
+">
+<div style="
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: #DCEAF7;
+">ANÁLISIS INDIVIDUAL</div>
+<h2 style="
+    color: white;
+    font-size: 30px;
+    margin-top: 10px;
+    margin-bottom: 5px;
+">RÍO LOA</h2>
+<p style="
+    color: #DCEAF7;
+    margin: 0;
+">Calama | Enaex Chile | Centro E024</p>
 </div>
-""", unsafe_allow_html=True)
-
-
-st.caption(
-    f"Materias primas activas encontradas: "
-    f"{len(datos_activos)}"
+    """,
+    unsafe_allow_html=True
 )
 
 
