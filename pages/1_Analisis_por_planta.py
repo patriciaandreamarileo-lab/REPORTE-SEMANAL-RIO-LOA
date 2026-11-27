@@ -138,15 +138,34 @@ def cargar_datos_mrp():
 
     return df.reset_index(drop=True)
 
+
 # =====================================================
 # 4. PREPARACIÓN DE DATOS
 # =====================================================
 
+# Descargar y cargar el MRP almacenado en GitHub
+try:
+    datos_mrp = cargar_datos_mrp()
+
+except Exception as e:
+    st.error(f"Error al cargar el archivo MRP: {e}")
+    st.stop()
+
+
+# Normalizar nombres de columnas
 datos_mrp.columns = [
-    str(columna).strip()
+    " ".join(
+        str(columna)
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .strip()
+        .split()
+    )
     for columna in datos_mrp.columns
 ]
 
+
+# Revisar columnas necesarias
 columnas_requeridas = [
     "Centro",
     "Material",
@@ -162,24 +181,26 @@ faltantes = [
 ]
 
 if faltantes:
-
     st.error(
         "Faltan columnas necesarias en la hoja NS: "
         + ", ".join(faltantes)
+    )
+
+    st.info(
+        "Columnas encontradas: "
+        + ", ".join(datos_mrp.columns.astype(str))
     )
 
     st.stop()
 
 
 # Limpiar registros vacíos
-
 datos_mrp = datos_mrp.dropna(
     subset=["Centro", "Material"]
 ).copy()
 
 
 # Normalizar centro
-
 datos_mrp["Centro"] = (
     datos_mrp["Centro"]
     .astype(str)
@@ -189,7 +210,6 @@ datos_mrp["Centro"] = (
 
 
 # Normalizar material
-
 datos_mrp["Material"] = (
     datos_mrp["Material"]
     .astype(str)
@@ -197,8 +217,17 @@ datos_mrp["Material"] = (
 )
 
 
-# Convertir columnas numéricas
+# Normalizar MMPP Activa
+datos_mrp["MMPP Activa"] = (
+    datos_mrp["MMPP Activa"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
 
+
+# Convertir columnas numéricas
 columnas_numericas = [
     "Riesgo MMPP",
     "Consumo X̄",
@@ -222,7 +251,6 @@ for columna in columnas_numericas:
 
 
 # Normalizar clasificaciones
-
 for columna in ["NS", "NS Corregido"]:
 
     if columna in datos_mrp.columns:
@@ -234,7 +262,6 @@ for columna in ["NS", "NS Corregido"]:
             .str.strip()
             .str.upper()
         )
-
 
 # =====================================================
 # 5. FILTRAR EXCLUSIVAMENTE RÍO LOA
