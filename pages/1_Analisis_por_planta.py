@@ -282,15 +282,42 @@ if datos.empty:
     st.stop()
 
 
+
 # Materias primas activas
 
-datos_activos = datos[
+valores_activa = (
     datos["MMPP Activa"]
+    .fillna("")
     .astype(str)
     .str.strip()
     .str.upper()
-    .isin(["SI", "SÍ"])
+)
+
+# Mostrar diagnóstico
+st.write("Valores encontrados en MMPP Activa:")
+st.write(valores_activa.value_counts(dropna=False))
+
+st.write("Centros encontrados:")
+st.write(datos["Centro"].value_counts())
+
+# Aceptar diferentes representaciones de activo
+datos_activos = datos[
+    valores_activa.isin([
+        "SI",
+        "SÍ",
+        "1",
+        "TRUE",
+        "VERDADERO",
+        "X"
+    ])
 ].copy()
+
+if datos_activos.empty:
+    st.warning(
+        "No se encontraron materias primas activas. "
+        "Revisar los valores mostrados arriba."
+    )
+
 
 
 if datos_activos.empty:
