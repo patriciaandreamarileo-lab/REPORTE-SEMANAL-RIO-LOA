@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -268,6 +267,7 @@ if catalogo.empty:
     st.stop()
 
 
+
 # =====================================================
 # 9. ENCABEZADO
 # =====================================================
@@ -282,40 +282,13 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-encabezado = """
-<div style="
-    background-color:#E6EFF9;
-    padding:25px;
-    border-radius:12px;
-    border-left:6px solid #245A91;
-">
+with st.container(border=True):
 
-    <div style="
-        font-size:13px;
-        font-weight:bold;
-        color:#245A91;
-        letter-spacing:2px;
-    ">
-        ANÁLISIS DE CONSUMO
-    </div>
+    st.caption("ANÁLISIS DE CONSUMO")
 
-    <div style="
-        font-size:28px;
-        font-weight:750;
-        color:#245A91;
-        margin-top:8px;
-    ">
-        RÍO LOA
-    </div>
+    st.markdown("## RÍO LOA")
 
-    <div style="color:#64748B;margin-top:5px;">
-        Calama | Enaex Chile | Centro E024
-    </div>
-
-</div>
-"""
-
-st.markdown(encabezado, unsafe_allow_html=True)
+    st.caption("Calama | Enaex Chile | Centro E024")
 
 st.write("")
 st.divider()
