@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -71,6 +70,7 @@ div[data-testid="stMetric"] {
 """, unsafe_allow_html=True)
 
 
+
 # =====================================================
 # 3. CARGAR MRP DESDE GITHUB
 # =====================================================
@@ -82,34 +82,61 @@ def cargar_datos_mrp():
 
     if contenido is None:
         raise Exception(
-            "No se encontró el archivo MRP almacenado en GitHub."
+            "No se encontró el archivo MRP en GitHub."
         )
 
     archivo = BytesIO(contenido)
 
-    df = pd.read_excel(
+    # Leer hoja NS sin establecer encabezados
+    df_original = pd.read_excel(
         archivo,
         sheet_name="NS",
-        header=3,
+        header=None,
         engine="openpyxl"
     )
 
-    return df
+    # Buscar automáticamente la fila de encabezados
+    fila_encabezado = None
 
+    for i in range(len(df_original)):
 
-try:
+        valores = (
+            df_original.iloc[i]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .tolist()
+        )
 
-    datos_mrp = cargar_datos_mrp()
+        if (
+            "CENTRO" in valores
+            and "MATERIAL" in valores
+            and "DESCRIPCIÓN DEL MATERIAL" in valores
+        ):
+            fila_encabezado = i
+            break
 
-    if datos_mrp.empty:
-        st.error("La hoja NS no contiene información.")
-        st.stop()
+    if fila_encabezado is None:
+        raise Exception(
+            "No se encontraron los encabezados "
+            "Centro, Material y Descripción del material."
+        )
 
-except Exception as e:
+    # Asignar encabezados encontrados
+    df = df_original.iloc[fila_encabezado + 1:].copy()
 
-    st.error(f"Error al cargar el MRP: {e}")
-    st.stop()
+    df.columns = (
+        df_original.iloc[fila_encabezado]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
 
+    # Eliminar filas completamente vacías
+    df = df.dropna(how="all")
+
+    return df.reset_index(drop=True)
 
 # =====================================================
 # 4. PREPARACIÓN DE DATOS
