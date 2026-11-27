@@ -3,9 +3,9 @@ import streamlit as st
 from modules.navegacion import configurar_navegacion
 
 
-# ==========================================
-# CONFIGURACIÓN
-# ==========================================
+# =====================================================
+# 1. CONFIGURACIÓN GENERAL
+# =====================================================
 
 st.set_page_config(
     page_title="Análisis por planta | Enaex",
@@ -14,62 +14,54 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Navegación corporativa
 configurar_navegacion()
 
 
-# ==========================================
-# ESTILOS
-# ==========================================
+# =====================================================
+# 2. ESTILOS
+# =====================================================
 
 st.markdown("""
 <style>
 
+.stApp {
+    background-color: #F4F7FB;
+}
+
 .plant-description {
     color: #64748B;
     font-size: 16px;
-    margin-bottom: 25px;
+    margin-bottom: 28px;
 }
 
-.plant-number {
+.plant-card-number {
     font-size: 13px;
     font-weight: bold;
     letter-spacing: 2px;
-    margin-bottom: 10px;
+    margin-bottom: 15px;
 }
 
-.plant-name {
+.plant-card-name {
     font-size: 23px;
     font-weight: 750;
+    margin-top: 12px;
     margin-bottom: 5px;
 }
 
-.plant-location {
+.plant-card-location {
     font-size: 14px;
     color: #64748B;
-    margin-bottom: 18px;
+    margin-top: 8px;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
 
-# ==========================================
-# ENCABEZADO
-# ==========================================
-
-st.title("Análisis por planta")
-
-st.markdown("""
-<div class="plant-description">
-Selecciona una planta para consultar sus indicadores
-y analizar el comportamiento de sus materias primas.
-</div>
-""", unsafe_allow_html=True)
-
-
-# ==========================================
-# INFORMACIÓN DE LAS PLANTAS
-# ==========================================
+# =====================================================
+# 3. INFORMACIÓN DE LAS PLANTAS
+# =====================================================
 
 plantas = {
 
@@ -100,9 +92,9 @@ plantas = {
 }
 
 
-# ==========================================
-# ESTADO DE SELECCIÓN
-# ==========================================
+# =====================================================
+# 4. CONTROL DE SELECCIÓN
+# =====================================================
 
 if "planta_seleccionada" not in st.session_state:
     st.session_state.planta_seleccionada = None
@@ -112,9 +104,26 @@ def seleccionar_planta(nombre):
     st.session_state.planta_seleccionada = nombre
 
 
-# ==========================================
-# TARJETAS DE SELECCIÓN
-# ==========================================
+# =====================================================
+# 5. ENCABEZADO
+# =====================================================
+
+st.title("Análisis por planta")
+
+st.markdown(
+    """
+    <div class="plant-description">
+        Selecciona una planta para consultar sus indicadores
+        y analizar el comportamiento de sus materias primas.
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# =====================================================
+# 6. SELECCIÓN DE PLANTAS
+# =====================================================
 
 if st.session_state.planta_seleccionada is None:
 
@@ -126,38 +135,39 @@ if st.session_state.planta_seleccionada is None:
 
             with st.container(border=True):
 
-                st.markdown(
-                    f"""
-                    <div style="
-                        background-color: {datos['fondo']};
-                        padding: 20px;
-                        border-radius: 10px;
-                        margin-bottom: 15px;
-                    ">
-
-                        <div class="plant-number"
-                             style="color: {datos['color']};">
-                            PLANTA {datos['numero']}
-                        </div>
-
-                        <div style="font-size: 35px;">
-                            {datos['icono']}
-                        </div>
-
-                        <div class="plant-name"
-                             style="color: {datos['color']};">
-                            {nombre}
-                        </div>
-
-                        <div class="plant-location">
-                            {datos['ubicacion']}
-                        </div>
-
+                # Tarjeta visual de cada planta
+                html_tarjeta = f"""<div style="
+                    background-color: {datos['fondo']};
+                    padding: 22px;
+                    border-radius: 12px;
+                    margin-bottom: 15px;
+                    min-height: 215px;
+                ">
+                    <div class="plant-card-number"
+                         style="color: {datos['color']};">
+                        PLANTA {datos['numero']}
                     </div>
-                    """,
+
+                    <div style="font-size: 38px;">
+                        {datos['icono']}
+                    </div>
+
+                    <div class="plant-card-name"
+                         style="color: {datos['color']};">
+                        {nombre}
+                    </div>
+
+                    <div class="plant-card-location">
+                        {datos['ubicacion']}
+                    </div>
+                </div>"""
+
+                st.markdown(
+                    html_tarjeta,
                     unsafe_allow_html=True
                 )
 
+                # Botón de ingreso
                 st.button(
                     "Ver análisis de planta →",
                     key=f"btn_{nombre}",
@@ -167,15 +177,16 @@ if st.session_state.planta_seleccionada is None:
                 )
 
 
-# ==========================================
-# VISTA INDIVIDUAL DE PLANTA
-# ==========================================
+# =====================================================
+# 7. VISTA INDIVIDUAL DE CADA PLANTA
+# =====================================================
 
 else:
 
     nombre = st.session_state.planta_seleccionada
     datos = plantas[nombre]
 
+    # Botón para regresar
     st.button(
         "← Volver a selección de plantas",
         on_click=seleccionar_planta,
@@ -184,49 +195,121 @@ else:
 
     st.divider()
 
-    st.markdown(
-        f"""
+    # Encabezado de planta
+    encabezado_planta = f"""<div style="
+        background-color: {datos['fondo']};
+        padding: 28px;
+        border-radius: 12px;
+        border-left: 6px solid {datos['color']};
+    ">
         <div style="
-            background-color: {datos['fondo']};
-            padding: 25px;
-            border-radius: 12px;
-            border-left: 6px solid {datos['color']};
+            font-size: 13px;
+            font-weight: bold;
+            color: {datos['color']};
+            letter-spacing: 2px;
         ">
-
-            <div style="
-                font-size: 13px;
-                color: {datos['color']};
-            ">
-                ANÁLISIS INDIVIDUAL
-            </div>
-
-            <div style="
-                font-size: 30px;
-                font-weight: 750;
-                color: {datos['color']};
-            ">
-                {nombre}
-            </div>
-
-            <div style="color: #64748B;">
-                {datos['ubicacion']} | Enaex Chile
-            </div>
-
+            ANÁLISIS INDIVIDUAL
         </div>
-        """,
+
+        <div style="
+            font-size: 30px;
+            font-weight: 750;
+            color: {datos['color']};
+            margin-top: 8px;
+        ">
+            {nombre}
+        </div>
+
+        <div style="color: #64748B; margin-top: 5px;">
+            {datos['ubicacion']} | Enaex Chile
+        </div>
+    </div>"""
+
+    st.markdown(
+        encabezado_planta,
         unsafe_allow_html=True
     )
 
+    st.write("")
+
+    # Indicadores
     st.subheader("Indicadores de la planta")
 
-    st.info(
-        "Los indicadores de inventario, cobertura y nivel de "
-        "servicio se incorporarán en la siguiente etapa."
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Materias primas",
+        "—",
+        help="Cantidad de materias primas registradas."
     )
 
-    st.subheader("Análisis de materias primas")
+    col2.metric(
+        "Nivel de servicio",
+        "—",
+        help="Indicador de nivel de servicio de la planta."
+    )
+
+    col3.metric(
+        "Cobertura promedio",
+        "—",
+        help="Cobertura promedio del inventario."
+    )
+
+    st.divider()
+
+    # Análisis de inventario
+    st.subheader("Análisis de inventario")
 
     st.info(
-        "Aquí incorporaremos el análisis individual de cada "
-        "materia prima, utilizando los archivos Excel de esta planta."
+        "En esta sección incorporaremos los indicadores "
+        "de stock actual, stock de seguridad, stock máximo, "
+        "stock óptimo y cobertura de inventario."
     )
+
+    st.divider()
+
+    # Materias primas críticas
+    st.subheader("Materias primas críticas")
+
+    st.info(
+        "Aquí identificaremos las materias primas que "
+        "requieren mayor atención por sus niveles de inventario."
+    )
+
+    st.divider()
+
+    # Análisis individual
+    st.subheader("Análisis individual de materias primas")
+
+    st.info(
+        "Aquí incorporaremos gráficos y tablas para "
+        "analizar individualmente cada materia prima."
+    )
+
+    st.divider()
+
+    # Órdenes de compra
+    st.subheader("Órdenes de compra pendientes")
+
+    st.info(
+        "Aquí mostraremos el detalle de las órdenes de compra "
+        "pendientes de recepción."
+    )
+
+
+# =====================================================
+# 8. PIE DE PÁGINA
+# =====================================================
+
+st.markdown("""
+<div style="
+    text-align: center;
+    color: #8492A6;
+    font-size: 12px;
+    margin-top: 45px;
+    padding: 15px;
+">
+    ENAEX CHILE | Dashboard de gestión de materias primas
+</div>
+""", unsafe_allow_html=True)
+
