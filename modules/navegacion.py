@@ -1,4 +1,3 @@
-
 import streamlit as st
 
 
@@ -35,7 +34,11 @@ def configurar_navegacion():
 
         st.markdown("### NAVEGACIÓN")
 
-        st.page_link("app.py", label="Inicio", icon="🏠")
+        st.page_link(
+            "app.py",
+            label="Inicio",
+            icon="🏠"
+        )
 
         st.page_link(
             "pages/1_Analisis_por_planta.py",
@@ -53,6 +56,14 @@ def configurar_navegacion():
             "pages/3_Evolucion_de_precios.py",
             label="Evolución de precios",
             icon="📈"
+        )
+
+        st.divider()
+
+        st.page_link(
+            "pages/4_Administracion.py",
+            label="Administración",
+            icon="🔐"
         )
 
         st.divider()
