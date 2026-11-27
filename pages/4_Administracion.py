@@ -1,4 +1,3 @@
-
 import streamlit as st
 import hmac
 
@@ -276,3 +275,45 @@ st.divider()
 st.caption(
     "ENAEX CHILE | Panel exclusivo de administración"
 )
+
+# =====================================================
+# 10. PRUEBA DE LECTURA DEL MRP
+# =====================================================
+
+st.divider()
+
+st.subheader("Verificación de datos del MRP")
+
+if st.button("Leer hoja NS del MRP"):
+
+    try:
+
+        from modules.mrp_reader import obtener_resumen_mrp
+
+        with st.spinner("Leyendo archivo MRP desde GitHub..."):
+
+            resultado = obtener_resumen_mrp()
+
+        st.success("La hoja NS se leyó correctamente.")
+
+        st.write(
+            "Cantidad de registros:",
+            resultado["cantidad_registros"]
+        )
+
+        st.write("Hojas del archivo:", resultado["hojas"])
+
+        st.write("Columnas encontradas:")
+
+        st.write(resultado["columnas"])
+
+        st.write("Vista previa de la hoja NS:")
+
+        st.dataframe(
+            resultado["datos"].head(15),
+            use_container_width=True
+        )
+
+    except Exception as error:
+
+        st.error(f"Error al leer el MRP: {error}")
