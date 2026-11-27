@@ -274,55 +274,32 @@ if catalogo.empty:
 st.title("Consumo mensual de materias primas")
 
 st.markdown(
-    """
-    <div class="descripcion">
-        Análisis histórico de los movimientos y consumo
-        de materias primas de Río Loa.
-    </div>
-    """,
-    unsafe_allow_html=True
+    "Análisis histórico de los movimientos y consumo "
+    "de materias primas de Río Loa."
+)
+
+encabezado_html = (
+    '<div style="background:linear-gradient(110deg,#153653 0%,#286B9B 100%);'
+    'padding:35px;border-radius:16px;margin-top:20px;margin-bottom:25px;">'
+    '<div style="font-size:13px;font-weight:bold;color:#FFFFFF;letter-spacing:2px;">'
+    'ANÁLISIS INDIVIDUAL'
+    '</div>'
+    '<div style="font-size:34px;font-weight:750;color:#FFFFFF;margin-top:20px;">'
+    'RÍO LOA'
+    '</div>'
+    '<div style="font-size:17px;color:#FFFFFF;margin-top:20px;">'
+    'Calama | Enaex Chile | Centro E024'
+    '</div>'
+    '</div>'
 )
 
 st.markdown(
-    """
-    <div style="
-        background: linear-gradient(110deg, #153653 0%, #286B9B 100%);
-        padding: 35px;
-        border-radius: 16px;
-        margin-top: 20px;
-        margin-bottom: 25px;
-    ">
-        <div style="
-            font-size: 13px;
-            font-weight: bold;
-            color: #FFFFFF;
-            letter-spacing: 2px;
-        ">
-            ANÁLISIS INDIVIDUAL
-        </div>
-
-        <div style="
-            font-size: 34px;
-            font-weight: 750;
-            color: #FFFFFF;
-            margin-top: 20px;
-        ">
-            RÍO LOA
-        </div>
-
-        <div style="
-            font-size: 17px;
-            color: #FFFFFF;
-            margin-top: 20px;
-        ">
-            Calama | Enaex Chile | Centro E024
-        </div>
-    </div>
-    """,
+    encabezado_html,
     unsafe_allow_html=True
 )
 
 st.divider()
+
 
 # =====================================================
 # 10. BUSCADOR Y SELECTOR DE MATERIAS PRIMAS
