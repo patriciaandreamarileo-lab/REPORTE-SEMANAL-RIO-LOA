@@ -267,7 +267,6 @@ if catalogo.empty:
     st.stop()
 
 
-
 # =====================================================
 # 9. ENCABEZADO
 # =====================================================
@@ -275,24 +274,55 @@ if catalogo.empty:
 st.title("Consumo mensual de materias primas")
 
 st.markdown(
-    '<div class="descripcion">'
-    'Análisis histórico de los movimientos y consumo '
-    'de materias primas de Río Loa.'
-    '</div>',
+    """
+    <div class="descripcion">
+        Análisis histórico de los movimientos y consumo
+        de materias primas de Río Loa.
+    </div>
+    """,
     unsafe_allow_html=True
 )
 
-with st.container(border=True):
+st.markdown(
+    """
+    <div style="
+        background: linear-gradient(110deg, #153653 0%, #286B9B 100%);
+        padding: 35px;
+        border-radius: 16px;
+        margin-top: 20px;
+        margin-bottom: 25px;
+    ">
+        <div style="
+            font-size: 13px;
+            font-weight: bold;
+            color: #FFFFFF;
+            letter-spacing: 2px;
+        ">
+            ANÁLISIS INDIVIDUAL
+        </div>
 
-    st.caption("ANÁLISIS DE CONSUMO")
+        <div style="
+            font-size: 34px;
+            font-weight: 750;
+            color: #FFFFFF;
+            margin-top: 20px;
+        ">
+            RÍO LOA
+        </div>
 
-    st.markdown("## RÍO LOA")
+        <div style="
+            font-size: 17px;
+            color: #FFFFFF;
+            margin-top: 20px;
+        ">
+            Calama | Enaex Chile | Centro E024
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
-    st.caption("Calama | Enaex Chile | Centro E024")
-
-st.write("")
 st.divider()
-
 
 # =====================================================
 # 10. BUSCADOR Y SELECTOR DE MATERIAS PRIMAS
