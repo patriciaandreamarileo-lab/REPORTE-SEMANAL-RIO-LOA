@@ -1,5 +1,7 @@
-import streamlit as st
+
 import pandas as pd
+import streamlit as st
+import plotly.express as px
 
 from modules.navegacion import configurar_navegacion
 from modules.mrp_reader import cargar_mrp
@@ -10,7 +12,7 @@ from modules.mrp_reader import cargar_mrp
 # =====================================================
 
 st.set_page_config(
-    page_title="Análisis por planta | Río Loa",
+    page_title="Análisis por planta | Enaex",
     page_icon="🏭",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -18,9 +20,11 @@ st.set_page_config(
 
 configurar_navegacion()
 
+CENTRO_RIO_LOA = "E024"
+
 
 # =====================================================
-# 2. ESTILOS
+# 2. DISEÑO
 # =====================================================
 
 st.markdown("""
@@ -31,38 +35,39 @@ st.markdown("""
 }
 
 .plant-header {
-    background-color: #E6EFF9;
-    border-left: 7px solid #245A91;
-    border-radius: 12px;
-    padding: 25px;
+    background: linear-gradient(110deg, #123454, #24669A);
+    padding: 28px;
+    border-radius: 14px;
     margin-bottom: 20px;
+    color: white;
 }
 
-.plant-title {
-    color: #245A91;
+.plant-header h2 {
+    color: white;
+    margin: 0;
     font-size: 30px;
-    font-weight: 750;
 }
 
-.plant-subtitle {
-    color: #64748B;
-    font-size: 15px;
+.plant-header p {
+    color: #DCEAF7;
+    margin-top: 8px;
+    margin-bottom: 0;
 }
 
-.alert-box {
-    background-color: #FEE2E2;
-    border-left: 6px solid #DC2626;
-    border-radius: 9px;
-    padding: 15px;
-    margin-bottom: 12px;
-    color: #991B1B;
+.section-title {
+    color: #173F63;
+    font-weight: 700;
 }
 
-.section-description {
-    color: #64748B;
-    font-size: 14px;
-    margin-top: -8px;
-    margin-bottom: 15px;
+div[data-testid="stMetric"] {
+    background-color: white;
+    border: 1px solid #E2E8F0;
+    padding: 18px;
+    border-radius: 12px;
+}
+
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 12px;
 }
 
 </style>
@@ -70,40 +75,60 @@ st.markdown("""
 
 
 # =====================================================
-# 3. FUNCIONES DE LIMPIEZA
+# 3. FUNCIONES AUXILIARES
 # =====================================================
 
-def convertir_numero(columna):
+def normalizar_texto(serie):
 
-    return pd.to_numeric(
-        columna,
-        errors="coerce"
+    return (
+        serie.fillna("")
+        .astype(str)
+        .str.strip()
+        .str.upper()
     )
 
 
-def limpiar_codigo(valor):
+def convertir_numerico(df, columnas):
 
-    if pd.isna(valor):
-        return ""
+    df = df.copy()
 
-    valor = str(valor).strip()
+    for columna in columnas:
 
-    if valor.endswith(".0"):
-        valor = valor[:-2]
+        if columna in df.columns:
 
-    return valor.upper()
+            df[columna] = pd.to_numeric(
+                df[columna]
+                .astype(str)
+                .str.replace(",", ".", regex=False)
+                .str.replace("%", "", regex=False)
+                .str.replace(r"[^\d.\-]", "", regex=True),
+                errors="coerce"
+            )
+
+    return df
 
 
-def formato_numero(valor):
+def mostrar_tabla(df, columnas):
 
-    if pd.isna(valor):
-        return "—"
+    disponibles = [
+        columna
+        for columna in columnas
+        if columna in df.columns
+    ]
 
-    return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    if df.empty:
+        st.info("No hay registros disponibles para mostrar.")
+        return
+
+    st.dataframe(
+        df[disponibles],
+        use_container_width=True,
+        hide_index=True
+    )
 
 
 # =====================================================
-# 4. CARGA DEL MRP
+# 4. CARGA DEL MRP DESDE GITHUB
 # =====================================================
 
 st.title("Análisis por planta")
@@ -113,7 +138,7 @@ st.markdown(
     "de materias primas de Río Loa."
 )
 
-col_actualizar, col_fecha = st.columns([1, 4])
+col_actualizar, col_estado = st.columns([1, 3])
 
 with col_actualizar:
 
@@ -123,28 +148,20 @@ with col_actualizar:
     ):
 
         cargar_mrp.clear()
+        st.cache_data.clear()
         st.rerun()
 
 
 try:
 
-    datos_mrp, hojas_mrp = cargar_mrp()
+    with st.spinner("Consultando información del MRP..."):
 
-    if datos_mrp is None or datos_mrp.empty:
-
-        st.error("El archivo MRP no contiene información.")
-
-        st.stop()
+        datos_mrp, hojas_mrp = cargar_mrp()
 
 except Exception as error:
 
     st.error(
         f"No fue posible cargar el MRP desde GitHub: {error}"
-    )
-
-    st.info(
-        "Verifica que el archivo Planificacion_MRP.xlsm "
-        "esté guardado correctamente en GitHub."
     )
 
     st.stop()
@@ -154,26 +171,25 @@ except Exception as error:
 # 5. VALIDACIÓN DE COLUMNAS
 # =====================================================
 
-columnas_necesarias = [
+COLUMNAS_NECESARIAS = [
     "Centro",
     "Material",
     "Descripción del material",
-    "UM",
     "MMPP Activa",
+    "NS",
+    "NS Corregido",
     "Consumo X̄",
     "Stock Actual",
     "Stock Óptimo",
     "Stock Seguridad",
     "Stock Máximo",
-    "Cobertura a [Días]",
-    "NS",
-    "NS Corregido",
-    "Comentario"
+    "Cob. [Meses]",
+    "Cobertura a [Días]"
 ]
 
 faltantes = [
     columna
-    for columna in columnas_necesarias
+    for columna in COLUMNAS_NECESARIAS
     if columna not in datos_mrp.columns
 ]
 
@@ -184,85 +200,102 @@ if faltantes:
         + ", ".join(faltantes)
     )
 
-    st.write("Columnas encontradas:")
-    st.write(datos_mrp.columns.tolist())
-
     st.stop()
 
 
 # =====================================================
-# 6. IDENTIFICACIÓN DE RÍO LOA
+# 6. FILTRAR RÍO LOA (E024)
 # =====================================================
 
-df = datos_mrp.copy()
+datos_mrp = datos_mrp.copy()
 
-df["Centro"] = df["Centro"].apply(limpiar_codigo)
-
-df["Material"] = df["Material"].apply(limpiar_codigo)
-
-# Identificar todas las materias primas del centro E024.
-datos_rio_loa = df[
-    df["Centro"] == "E024"
-].copy()
-
-if datos_rio_loa.empty:
-
-    st.warning(
-        "No se encontraron materias primas asociadas "
-        "al centro E024 en el MRP."
-    )
-
-    st.stop()
-
-
-# =====================================================
-# 7. LIMPIEZA DE INFORMACIÓN
-# =====================================================
-
-columnas_numericas = [
-    "Consumo X̄",
-    "Stock Actual",
-    "Stock Óptimo",
-    "Stock Seguridad",
-    "Stock Máximo",
-    "Cobertura a [Días]"
-]
-
-for columna in columnas_numericas:
-
-    datos_rio_loa[columna] = convertir_numero(
-        datos_rio_loa[columna]
-    )
-
-
-# Normalizar clasificación de nivel de servicio
-
-datos_rio_loa["NS Corregido"] = (
-    datos_rio_loa["NS Corregido"]
-    .fillna(datos_rio_loa["NS"])
-    .astype(str)
-    .str.strip()
-    .str.upper()
-)
-
-# Normalizar MMPP Activa
-
-datos_rio_loa["MMPP Activa"] = (
-    datos_rio_loa["MMPP Activa"]
+datos_mrp["Centro"] = (
+    datos_mrp["Centro"]
     .fillna("")
     .astype(str)
     .str.strip()
     .str.upper()
 )
 
-# Se consideran todas las materias primas E024.
-# Se conserva la información de MMPP Activa para consulta.
+datos_rio_loa = datos_mrp[
+    datos_mrp["Centro"] == CENTRO_RIO_LOA
+].copy()
 
-datos_rio_loa = datos_rio_loa.reset_index(drop=True)
+
+if datos_rio_loa.empty:
+
+    st.warning(
+        "No se encontraron materias primas del centro E024 "
+        "en el archivo MRP."
+    )
+
+    st.stop()
 
 
 # =====================================================
-# 8. ENCABEZADO RÍO LOA
+# 7. FILTRAR MATERIAS PRIMAS ACTIVAS
+# =====================================================
+
+datos_rio_loa["MMPP Activa"] = (
+    normalizar_texto(datos_rio_loa["MMPP Activa"])
+)
+
+datos_activos = datos_rio_loa[
+    datos_rio_loa["MMPP Activa"].isin(
+        ["SI", "SÍ", "YES", "1"]
+    )
+].copy()
+
+
+if datos_activos.empty:
+
+    st.warning(
+        "Se encontraron registros E024, pero no se "
+        "identificaron materias primas activas. "
+        "Revisa la columna MMPP Activa."
+    )
+
+    st.write(
+        "Valores encontrados:",
+        datos_rio_loa["MMPP Activa"].value_counts()
+    )
+
+    st.stop()
+
+
+# =====================================================
+# 8. CONVERSIÓN DE COLUMNAS NUMÉRICAS
+# =====================================================
+
+COLUMNAS_NUMERICAS = [
+    "Consumo X̄",
+    "Stock Actual",
+    "Stock Óptimo",
+    "Stock Seguridad",
+    "Stock Máximo",
+    "Cob. [Meses]",
+    "Cobertura a [Días]",
+    "Sobrestock [%]"
+]
+
+datos_activos = convertir_numerico(
+    datos_activos,
+    COLUMNAS_NUMERICAS
+)
+
+# Limpiar clasificación del nivel de servicio
+
+datos_activos["NS Corregido"] = (
+    normalizar_texto(datos_activos["NS Corregido"])
+)
+
+datos_activos["NS"] = (
+    normalizar_texto(datos_activos["NS"])
+)
+
+
+# =====================================================
+# 9. ENCABEZADO DE RÍO LOA
 # =====================================================
 
 st.markdown("""
@@ -271,319 +304,269 @@ st.markdown("""
     <div style="
         font-size:13px;
         font-weight:bold;
-        color:#245A91;
         letter-spacing:2px;
+        color:#DCEAF7;
     ">
         ANÁLISIS INDIVIDUAL
     </div>
 
-    <div class="plant-title">
-        RÍO LOA
-    </div>
+    <h2>RÍO LOA</h2>
 
-    <div class="plant-subtitle">
-        Calama | Enaex Chile | Centro E024
-    </div>
+    <p>Calama | Enaex Chile | Centro E024</p>
 
 </div>
 """, unsafe_allow_html=True)
 
 
 st.caption(
-    f"Última consulta: {len(datos_rio_loa)} materias primas "
-    "identificadas en el MRP para el centro E024."
+    f"Materias primas activas encontradas: "
+    f"{len(datos_activos)}"
 )
 
 
 # =====================================================
-# 9. INDICADORES GENERALES
+# 10. DISTRIBUCIÓN DEL NIVEL DE SERVICIO
 # =====================================================
 
-st.subheader("Indicadores de la planta")
+st.divider()
 
-total_materiales = len(datos_rio_loa)
+col_grafico, col_resumen = st.columns(
+    [1, 1],
+    gap="medium"
+)
 
-conteo_ns = (
-    datos_rio_loa["NS Corregido"]
+
+# -----------------------------------------------------
+# 10.1 CLASIFICACIÓN
+# -----------------------------------------------------
+
+clasificaciones = (
+    datos_activos["NS Corregido"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
+
+conteo = (
+    clasificaciones[
+        clasificaciones.isin(["BB", "EB", "SB"])
+    ]
     .value_counts()
-    .reindex(["BB", "EB", "SB"], fill_value=0)
+    .reindex(["EB", "SB", "BB"], fill_value=0)
 )
 
-total_ns = int(conteo_ns.sum())
+total_clasificados = int(conteo.sum())
 
-# Indicador ponderado:
-# EB = 100%, SB = 50%, BB = 0%.
 
-if total_ns > 0:
+# -----------------------------------------------------
+# 10.2 NIVEL DE SERVICIO
+# -----------------------------------------------------
+
+if total_clasificados > 0:
 
     nivel_servicio = (
-        conteo_ns["EB"] + conteo_ns["SB"] * 0.5
-    ) / total_ns * 100
+        (
+            conteo["EB"]
+            + conteo["SB"] * 0.5
+        )
+        / total_clasificados
+    ) * 100
 
 else:
 
     nivel_servicio = 0
 
 
-coberturas_validas = (
-    datos_rio_loa["Cobertura a [Días]"]
-    .dropna()
+# -----------------------------------------------------
+# 10.3 COBERTURA
+# -----------------------------------------------------
+
+cobertura_dias = pd.to_numeric(
+    datos_activos["Cobertura a [Días]"],
+    errors="coerce"
 )
 
-if not coberturas_validas.empty:
-
-    cobertura_promedio = coberturas_validas.mean()
-
-else:
-
-    cobertura_promedio = 0
-
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric(
-    "Materias primas",
-    f"{total_materiales}"
-)
-
-col2.metric(
-    "Nivel de servicio",
-    f"{nivel_servicio:.1f}%"
-)
-
-col3.metric(
-    "Cobertura promedio",
-    f"{cobertura_promedio:.1f} días"
+alertas = int(
+    (
+        cobertura_dias.notna()
+        & (cobertura_dias < 10)
+    ).sum()
 )
 
 
-st.divider()
+# -----------------------------------------------------
+# 10.4 GRÁFICO DE DONA
+# -----------------------------------------------------
 
+with col_grafico:
 
-# =====================================================
-# 10. DISTRIBUCIÓN BB, EB Y SB
-# =====================================================
+    st.subheader("Distribución del nivel de servicio")
 
-st.subheader("Distribución de materias primas")
-
-st.markdown(
-    '<div class="section-description">'
-    'Distribución porcentual de las materias primas '
-    'según su clasificación de nivel de servicio.'
-    '</div>',
-    unsafe_allow_html=True
-)
-
-if total_ns > 0:
-
-    grafico_ns = pd.DataFrame({
-        "Clasificación": ["BB", "EB", "SB"],
+    grafico_df = pd.DataFrame({
+        "Clasificación": ["EB", "SB", "BB"],
         "Cantidad": [
-            int(conteo_ns["BB"]),
-            int(conteo_ns["EB"]),
-            int(conteo_ns["SB"])
+            int(conteo["EB"]),
+            int(conteo["SB"]),
+            int(conteo["BB"])
         ]
     })
 
-    grafico_ns = grafico_ns[
-        grafico_ns["Cantidad"] > 0
-    ].copy()
+    grafico_df = grafico_df[
+        grafico_df["Cantidad"] > 0
+    ]
 
-    grafico_ns["Porcentaje"] = (
-        grafico_ns["Cantidad"] /
-        grafico_ns["Cantidad"].sum()
-    )
+    if not grafico_df.empty:
 
-    especificacion_grafico = {
-
-        "width": "container",
-        "height": 380,
-
-        "layer": [
-
-            {
-                "mark": {
-                    "type": "arc",
-                    "innerRadius": 0,
-                    "outerRadius": 145,
-                    "stroke": "white",
-                    "strokeWidth": 3
-                },
-
-                "encoding": {
-
-                    "theta": {
-                        "field": "Cantidad",
-                        "type": "quantitative",
-                        "stack": True
-                    },
-
-                    "color": {
-                        "field": "Clasificación",
-                        "type": "nominal",
-
-                        "scale": {
-                            "domain": ["BB", "EB", "SB"],
-                            "range": [
-                                "#E52525",
-                                "#16A34A",
-                                "#009FE3"
-                            ]
-                        },
-
-                        "legend": {
-                            "title": "Clasificación NS",
-                            "orient": "right"
-                        }
-                    },
-
-                    "tooltip": [
-                        {
-                            "field": "Clasificación",
-                            "title": "Clasificación"
-                        },
-                        {
-                            "field": "Cantidad",
-                            "title": "Cantidad"
-                        },
-                        {
-                            "field": "Porcentaje",
-                            "title": "Porcentaje",
-                            "format": ".1%"
-                        }
-                    ]
-                }
-            },
-
-            {
-                "mark": {
-                    "type": "text",
-                    "radius": 95,
-                    "fontSize": 17,
-                    "fontWeight": "bold",
-                    "color": "white"
-                },
-
-                "encoding": {
-
-                    "theta": {
-                        "field": "Cantidad",
-                        "type": "quantitative",
-                        "stack": True
-                    },
-
-                    "text": {
-                        "field": "Porcentaje",
-                        "type": "quantitative",
-                        "format": ".1%"
-                    }
-                }
+        fig = px.pie(
+            grafico_df,
+            names="Clasificación",
+            values="Cantidad",
+            hole=0.48,
+            color="Clasificación",
+            color_discrete_map={
+                "EB": "#16A34A",
+                "SB": "#3B82F6",
+                "BB": "#EF4444"
             }
-        ]
-    }
+        )
 
-    st.vega_lite_chart(
-        grafico_ns,
-        especificacion_grafico,
-        use_container_width=True
-    )
+        fig.update_traces(
+            textposition="inside",
+            texttemplate=(
+                "%{label}<br>%{percent:.1%}"
+            ),
+            textfont_size=12,
+            marker=dict(
+                line=dict(
+                    color="white",
+                    width=2
+                )
+            )
+        )
 
-else:
+        fig.update_layout(
+            height=340,
+            margin=dict(
+                l=10,
+                r=10,
+                t=15,
+                b=10
+            ),
+            legend=dict(
+                orientation="v",
+                yanchor="middle",
+                y=0.5,
+                xanchor="left",
+                x=1
+            ),
+            showlegend=True
+        )
 
-    st.warning(
-        "No se encontraron clasificaciones BB, EB o SB."
-    )
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            config={
+                "displayModeBar": False
+            }
+        )
+
+    else:
+
+        st.info(
+            "No hay clasificaciones BB, EB o SB "
+            "para construir el gráfico."
+        )
 
 
-st.divider()
+# -----------------------------------------------------
+# 10.5 RESUMEN DE INVENTARIO
+# -----------------------------------------------------
+
+with col_resumen:
+
+    st.subheader("Resumen de inventario")
+
+    with st.container(border=True):
+
+        st.metric(
+            "Materias primas",
+            f"{len(datos_activos):,}".replace(",", ".")
+        )
+
+    with st.container(border=True):
+
+        st.metric(
+            "Nivel de servicio",
+            f"{nivel_servicio:.1f}%".replace(".", ",")
+        )
+
+    with st.container(border=True):
+
+        st.metric(
+            "Materias con cobertura menor a 10 días",
+            alertas
+        )
 
 
 # =====================================================
 # 11. CINCO MATERIAS PRIMAS CON MENOR STOCK
 # =====================================================
 
+st.divider()
+
 st.subheader("Materias primas con menor stock")
 
-st.markdown(
-    '<div class="section-description">'
-    'Identificación de las cinco materias primas '
-    'con menor disponibilidad de stock actual.'
-    '</div>',
-    unsafe_allow_html=True
+st.caption(
+    "Se muestran las cinco materias primas activas "
+    "con menor cantidad disponible en stock actual."
 )
 
-menor_stock = datos_rio_loa[
-    datos_rio_loa["Stock Actual"].notna()
-].copy()
+menor_stock = datos_activos.dropna(
+    subset=["Stock Actual"]
+).copy()
 
 menor_stock = menor_stock.sort_values(
     by="Stock Actual",
     ascending=True
 ).head(5)
 
-
-if not menor_stock.empty:
-
-    tabla_stock = menor_stock[[
+mostrar_tabla(
+    menor_stock,
+    [
         "Material",
         "Descripción del material",
         "UM",
         "Stock Actual",
         "Stock Seguridad",
+        "Stock Óptimo",
         "Cobertura a [Días]"
-    ]].copy()
+    ]
+)
 
-    tabla_stock["Stock Actual"] = (
-        tabla_stock["Stock Actual"].map(formato_numero)
-    )
 
-    tabla_stock["Stock Seguridad"] = (
-        tabla_stock["Stock Seguridad"].map(formato_numero)
-    )
-
-    tabla_stock["Cobertura a [Días]"] = (
-        tabla_stock["Cobertura a [Días]"].map(formato_numero)
-    )
-
-    st.dataframe(
-        tabla_stock,
-        use_container_width=True,
-        hide_index=True
-    )
-
-else:
-
-    st.info("No hay datos disponibles de stock actual.")
-
+# =====================================================
+# 12. CINCO MATERIAS PRIMAS CON MENOR CONSUMO
+#     Y MAYOR COBERTURA
+# =====================================================
 
 st.divider()
-
-
-# =====================================================
-# 12. CINCO MATERIAS PRIMAS DE MENOR CONSUMO
-#     CON MAYOR COBERTURA
-# =====================================================
 
 st.subheader(
     "Materias primas con menor consumo y mayor cobertura"
 )
 
-st.markdown(
-    '<div class="section-description">'
-    'Identificación de materias primas con menor consumo '
-    'promedio y mayores días de cobertura de stock.'
-    '</div>',
-    unsafe_allow_html=True
+st.caption(
+    "Se priorizan las materias primas con menor consumo "
+    "promedio y, en caso de empate, mayor cobertura."
 )
 
-menor_consumo = datos_rio_loa[
-    datos_rio_loa["Consumo X̄"].notna()
-    & datos_rio_loa["Cobertura a [Días]"].notna()
-].copy()
-
-menor_consumo = menor_consumo[
-    menor_consumo["Consumo X̄"] >= 0
-]
+menor_consumo = datos_activos.dropna(
+    subset=[
+        "Consumo X̄",
+        "Cobertura a [Días]"
+    ]
+).copy()
 
 menor_consumo = menor_consumo.sort_values(
     by=[
@@ -596,160 +579,184 @@ menor_consumo = menor_consumo.sort_values(
     ]
 ).head(5)
 
-
-if not menor_consumo.empty:
-
-    tabla_consumo = menor_consumo[[
+mostrar_tabla(
+    menor_consumo,
+    [
         "Material",
         "Descripción del material",
         "UM",
         "Consumo X̄",
         "Stock Actual",
-        "Cobertura a [Días]"
-    ]].copy()
+        "Cobertura a [Días]",
+        "Cob. [Meses]"
+    ]
+)
 
-    tabla_consumo["Consumo X̄"] = (
-        tabla_consumo["Consumo X̄"].map(formato_numero)
-    )
 
-    tabla_consumo["Stock Actual"] = (
-        tabla_consumo["Stock Actual"].map(formato_numero)
-    )
-
-    tabla_consumo["Cobertura a [Días]"] = (
-        tabla_consumo["Cobertura a [Días]"].map(formato_numero)
-    )
-
-    st.dataframe(
-        tabla_consumo,
-        use_container_width=True,
-        hide_index=True
-    )
-
-else:
-
-    st.info(
-        "No se encontraron registros suficientes "
-        "para realizar este análisis."
-    )
-
+# =====================================================
+# 13. ALERTAS DE MATERIAS PRIMAS
+#     CON MENOS DE 10 DÍAS DE COBERTURA
+# =====================================================
 
 st.divider()
 
+st.subheader("Alertas de cobertura de inventario")
 
-# =====================================================
-# 13. ALERTAS DE COBERTURA MENOR A 10 DÍAS
-# =====================================================
-
-st.subheader("Alertas de materias primas críticas")
-
-st.markdown(
-    '<div class="section-description">'
-    'Materias primas cuya cobertura disponible '
-    'es inferior a 10 días.'
-    '</div>',
-    unsafe_allow_html=True
-)
-
-alertas = datos_rio_loa[
-    datos_rio_loa["Cobertura a [Días]"].notna()
+materias_criticas = datos_activos[
+    datos_activos["Cobertura a [Días]"].notna()
     & (
-        datos_rio_loa["Cobertura a [Días]"] < 10
+        datos_activos["Cobertura a [Días]"] < 10
     )
 ].copy()
 
-alertas = alertas.sort_values(
+materias_criticas = materias_criticas.sort_values(
     by="Cobertura a [Días]",
     ascending=True
 )
 
-
-if not alertas.empty:
+if not materias_criticas.empty:
 
     st.error(
-        f"¡ATENCIÓN! Se identificaron {len(alertas)} "
-        "materias primas con menos de 10 días de cobertura."
+        f"⚠️ ¡ATENCIÓN! Se identificaron "
+        f"{len(materias_criticas)} materias primas "
+        "con menos de 10 días de cobertura."
     )
 
-    for _, fila in alertas.iterrows():
+    for _, fila in materias_criticas.iterrows():
 
-        material = fila["Material"]
+        with st.container(border=True):
 
-        descripcion = fila["Descripción del material"]
+            st.markdown(
+                f"### 🔴 Material {fila['Material']}"
+            )
 
-        cobertura = fila["Cobertura a [Días]"]
+            st.write(
+                fila["Descripción del material"]
+            )
 
-        stock = fila["Stock Actual"]
+            col1, col2, col3 = st.columns(3)
 
-        st.markdown(
-            f"""
-            <div class="alert-box">
+            col1.metric(
+                "Cobertura",
+                f"{fila['Cobertura a [Días]']:.2f} días"
+            )
 
-                <strong>⚠️ MATERIAL {material}</strong>
+            col2.metric(
+                "Stock actual",
+                (
+                    f"{fila['Stock Actual']:,.2f}"
+                    if pd.notna(fila["Stock Actual"])
+                    else "Sin información"
+                )
+            )
 
-                <br>
+            col3.metric(
+                "Consumo promedio",
+                (
+                    f"{fila['Consumo X̄']:,.2f}"
+                    if pd.notna(fila["Consumo X̄"])
+                    else "Sin información"
+                )
+            )
 
-                {descripcion}
+            if (
+                "Comentario" in fila.index
+                and pd.notna(fila["Comentario"])
+                and str(fila["Comentario"]).strip()
+            ):
 
-                <br><br>
-
-                <strong>Cobertura:</strong>
-                {formato_numero(cobertura)} días
-
-                &nbsp; | &nbsp;
-
-                <strong>Stock actual:</strong>
-                {formato_numero(stock)}
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+                st.caption(
+                    f"Comentario: {fila['Comentario']}"
+                )
 
 else:
 
     st.success(
-        "No existen materias primas con cobertura "
-        "inferior a 10 días."
+        "No se identificaron materias primas "
+        "con menos de 10 días de cobertura."
     )
 
+
+# =====================================================
+# 14. BUSCADOR INDIVIDUAL DE MATERIAS PRIMAS
+# =====================================================
 
 st.divider()
 
+st.subheader("Consulta individual de materias primas")
 
-# =====================================================
-# 14. DETALLE GENERAL DE MATERIAS PRIMAS
-# =====================================================
+materiales_disponibles = sorted(
+    datos_activos["Material"]
+    .dropna()
+    .astype(str)
+    .unique()
+    .tolist()
+)
 
-with st.expander("Consultar todas las materias primas de Río Loa"):
+if materiales_disponibles:
 
-    columnas_detalle = [
-        "Centro",
-        "Material",
-        "Descripción del material",
-        "UM",
-        "MMPP Activa",
-        "Consumo X̄",
-        "Stock Actual",
-        "Stock Óptimo",
-        "Stock Seguridad",
-        "Stock Máximo",
-        "Cobertura a [Días]",
-        "NS",
-        "NS Corregido",
-        "Comentario"
-    ]
-
-    st.dataframe(
-        datos_rio_loa[columnas_detalle],
-        use_container_width=True,
-        hide_index=True
+    material_seleccionado = st.selectbox(
+        "Selecciona una materia prima",
+        options=materiales_disponibles,
+        index=None,
+        placeholder="Buscar por código de material..."
     )
+
+    if material_seleccionado:
+
+        detalle = datos_activos[
+            datos_activos["Material"].astype(str)
+            == material_seleccionado
+        ]
+
+        if not detalle.empty:
+
+            fila = detalle.iloc[0]
+
+            st.markdown(
+                f"### {fila['Descripción del material']}"
+            )
+
+            col1, col2, col3 = st.columns(3)
+
+            col1.metric(
+                "Stock actual",
+                (
+                    f"{fila['Stock Actual']:,.2f}"
+                    if pd.notna(fila["Stock Actual"])
+                    else "Sin información"
+                )
+            )
+
+            col2.metric(
+                "Consumo promedio",
+                (
+                    f"{fila['Consumo X̄']:,.2f}"
+                    if pd.notna(fila["Consumo X̄"])
+                    else "Sin información"
+                )
+            )
+
+            col3.metric(
+                "Cobertura en días",
+                (
+                    f"{fila['Cobertura a [Días]']:.2f}"
+                    if pd.notna(fila["Cobertura a [Días]"])
+                    else "Sin información"
+                )
+            )
+
+            mostrar_tabla(
+                detalle,
+                datos_activos.columns.tolist()
+            )
 
 
 # =====================================================
 # 15. PIE DE PÁGINA
 # =====================================================
+
+st.divider()
 
 st.markdown(
     """
@@ -757,10 +764,9 @@ st.markdown(
         text-align:center;
         color:#8492A6;
         font-size:12px;
-        margin-top:45px;
         padding:15px;
     ">
-        ENAEX CHILE | RÍO LOA
+        ENAEX CHILE | RÍO LOA | CENTRO E024
         <br>
         Dashboard de gestión de materias primas
     </div>
