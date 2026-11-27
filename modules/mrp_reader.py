@@ -1,99 +1,42 @@
 import io
-import re
-import unicodedata
 import pandas as pd
 import streamlit as st
-
 from openpyxl import load_workbook
+
 from modules.github_storage import descargar_archivo_github
 
 
 RUTA_MRP = "data/MRP/Planificacion_MRP.xlsm"
 
+FILA_ENCABEZADOS = 10
 
-# =====================================================
-# NORMALIZAR TEXTOS
-# =====================================================
-
-def normalizar_texto(valor):
-
-    if valor is None:
-        return ""
-
-    texto = str(valor).strip().lower()
-
-    texto = unicodedata.normalize("NFD", texto)
-
-    texto = "".join(
-        caracter for caracter in texto
-        if unicodedata.category(caracter) != "Mn"
-    )
-
-    texto = re.sub(r"\s+", " ", texto)
-
-    return texto
-
-
-# =====================================================
-# EVITAR NOMBRES DE COLUMNAS REPETIDOS
-# =====================================================
-
-def nombres_unicos(encabezados):
-
-    resultado = []
-    contador = {}
-
-    for i, nombre in enumerate(encabezados):
-
-        nombre = str(nombre).strip()
-
-        if not nombre or nombre.lower() == "none":
-            nombre = f"Columna_{i + 1}"
-
-        if nombre in contador:
-
-            contador[nombre] += 1
-            nombre = f"{nombre}_{contador[nombre]}"
-
-        else:
-            contador[nombre] = 1
-
-        resultado.append(nombre)
-
-    return resultado
+COLUMNAS_MRP = [
+    "Centro",
+    "Material",
+    "Descripción del material",
+    "UM",
+    "MMPP Activa",
+    "Riesgo MMPP",
+    "Riesgo",
+    "Producto",
+    "Concat",
+    "Consumo X̄",
+    "Stock Actual",
+    "Stock Óptimo",
+    "Stock Seguridad",
+    "Stock Máximo",
+    "Prod. saldo m",
+    "Cob. [Meses]",
+    "Cobertura a [Días]",
+    "Sobrestock [%]",
+    "NS",
+    "NS Corregido",
+    "Comentario"
+]
 
 
 # =====================================================
-# IDENTIFICAR LA FILA REAL DE ENCABEZADOS
-# =====================================================
-
-def buscar_fila_encabezados(filas):
-
-    encabezados_requeridos = {
-        "centro",
-        "material",
-        "descripcion del material"
-    }
-
-    for indice, fila in enumerate(filas):
-
-        valores = {
-            normalizar_texto(valor)
-            for valor in fila
-            if valor is not None
-        }
-
-        if encabezados_requeridos.issubset(valores):
-            return indice
-
-    raise ValueError(
-        "No se encontró la fila de encabezados reales "
-        "de la hoja NS."
-    )
-
-
-# =====================================================
-# LEER HOJA NS
+# LECTURA DEL MRP
 # =====================================================
 
 @st.cache_data(ttl=60)
@@ -102,7 +45,6 @@ def cargar_mrp():
     contenido = descargar_archivo_github(RUTA_MRP)
 
     if contenido is None:
-
         raise FileNotFoundError(
             "No se encontró el archivo MRP en GitHub."
         )
@@ -118,79 +60,81 @@ def cargar_mrp():
     try:
 
         if "NS" not in libro.sheetnames:
-
             raise ValueError(
                 "No se encontró la hoja NS."
             )
 
         hoja = libro["NS"]
 
+        # Leer desde la fila 10 y columnas A:U
         filas = list(
-            hoja.iter_rows(values_only=True)
+            hoja.iter_rows(
+                min_row=FILA_ENCABEZADOS,
+                min_col=1,
+                max_col=21,
+                values_only=True
+            )
         )
 
         if not filas:
-
             raise ValueError(
                 "La hoja NS está vacía."
             )
 
-        # Buscar la fila que contiene los encabezados reales
-        indice_encabezados = buscar_fila_encabezados(filas
-        )
-
-        fila_encabezados = filas[indice_encabezados]
-
-        encabezados = [
-            str(valor).strip()
-            if valor is not None
-            else f"Columna_{i + 1}"
-
-            for i, valor in enumerate(fila_encabezados)
+        encabezados_excel = [
+            str(valor).strip() if valor is not None else ""
+            for valor in filas[0]
         ]
 
-        encabezados = nombres_unicos(encabezados)
+        # Validar encabezados principales
+        encabezados_esperados = [
+            "Centro",
+            "Material",
+            "Descripción del material",
+            "UM"
+        ]
 
-        # Obtener únicamente los registros posteriores
-        registros = filas[indice_encabezados + 1:]
+        if encabezados_excel[:4] != encabezados_esperados:
+            raise ValueError(
+                "Los encabezados de la fila 10 "
+                "no coinciden con la estructura esperada."
+            )
 
+        # Crear DataFrame con las 21 columnas
         df = pd.DataFrame(
-            registros,
-            columns=encabezados
+            filas[1:],
+            columns=COLUMNAS_MRP
         )
 
         # Eliminar filas completamente vacías
         df = df.dropna(how="all")
 
-        # Eliminar filas que sean encabezados repetidos
-        if "Centro" in df.columns:
+        # Conservar únicamente registros con centro y material
+        df = df[
+            df["Centro"].notna()
+            & df["Material"].notna()
+        ].copy()
 
-            df = df[
-                df["Centro"].apply(
-                    normalizar_texto
-                ) != "centro"
-            ]
-
-        # Eliminar columnas completamente vacías
-        df = df.dropna(axis=1, how="all")
-
-        # Limpiar espacios en columnas de texto
+        # Limpiar espacios en textos
         for columna in df.select_dtypes(
             include=["object"]
         ).columns:
 
             df[columna] = df[columna].apply(
-                lambda x: x.strip()
-                if isinstance(x, str)
-                else x
+                lambda valor: valor.strip()
+                if isinstance(valor, str)
+                else valor
             )
+
+        # Mantener los códigos como texto
+        df["Centro"] = df["Centro"].astype(str)
+        df["Material"] = df["Material"].astype(str)
 
         df = df.reset_index(drop=True)
 
         return df, libro.sheetnames
 
     finally:
-
         libro.close()
 
 
