@@ -1,30 +1,43 @@
-
-import streamlit as st
 import hmac
+import streamlit as st
 
 from modules.github_storage import (
     subir_archivo_github,
     descargar_archivo_github,
-    comprobar_conexion,
-    obtener_info_archivo
+    comprobar_conexion
 )
 
 
 # =====================================================
-# 1. CONFIGURACIÓN
+# 1. CONFIGURACIÓN GENERAL
 # =====================================================
 
 st.set_page_config(
     page_title="Administración | Enaex",
     page_icon="🔐",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 RUTA_MRP = "data/MRP/Planificacion_MRP.xlsm"
 
 
 # =====================================================
-# 2. DISEÑO
+# 2. ESTADOS DE SESIÓN
+# =====================================================
+
+if "admin_autenticada" not in st.session_state:
+    st.session_state.admin_autenticada = False
+
+if "mrp_uploader_version" not in st.session_state:
+    st.session_state.mrp_uploader_version = 0
+
+if "mrp_actualizado" not in st.session_state:
+    st.session_state.mrp_actualizado = False
+
+
+# =====================================================
+# 3. DISEÑO
 # =====================================================
 
 st.markdown("""
@@ -57,7 +70,7 @@ st.markdown("""
 
 
 # =====================================================
-# 3. ENCABEZADO
+# 4. ENCABEZADO
 # =====================================================
 
 st.markdown("""
@@ -69,21 +82,36 @@ st.markdown("""
 
 
 # =====================================================
-# 4. CONTROL DE ACCESO
+# 5. MENSAJE DE ACTUALIZACIÓN
 # =====================================================
 
-if "admin_autenticada" not in st.session_state:
+if st.session_state.mrp_actualizado:
 
-    st.session_state.admin_autenticada = False
+    st.success(
+        "¡El archivo MRP fue actualizado y verificado "
+        "correctamente en GitHub!"
+    )
 
+    st.info(
+        "La sesión de administración se ha cerrado "
+        "automáticamente. Para realizar otra actualización "
+        "debes ingresar nuevamente la contraseña."
+    )
+
+    st.session_state.mrp_actualizado = False
+
+
+# =====================================================
+# 6. CONTROL DE ACCESO
+# =====================================================
 
 if not st.session_state.admin_autenticada:
 
     st.subheader("Acceso de administradoras")
 
     st.write(
-        "Ingresa la contraseña para habilitar "
-        "la carga y actualización de archivos."
+        "Ingresa la contraseña para habilitar la carga "
+        "y actualización del archivo MRP."
     )
 
     with st.form("formulario_acceso"):
@@ -100,25 +128,33 @@ if not st.session_state.admin_autenticada:
 
     if ingresar:
 
-        password_correcta = st.secrets["ADMIN_PASSWORD"]
+        try:
 
-        if hmac.compare_digest(
-            password,
-            password_correcta
-        ):
+            password_correcta = st.secrets["ADMIN_PASSWORD"]
 
-            st.session_state.admin_autenticada = True
-            st.rerun()
+            if hmac.compare_digest(
+                password,
+                password_correcta
+            ):
 
-        else:
+                st.session_state.admin_autenticada = True
+                st.rerun()
 
-            st.error("Contraseña incorrecta.")
+            else:
+
+                st.error("Contraseña incorrecta.")
+
+        except Exception as error:
+
+            st.error(
+                f"No fue posible validar el acceso: {error}"
+            )
 
     st.stop()
 
 
 # =====================================================
-# 5. PANEL AUTORIZADO
+# 7. PANEL AUTORIZADO
 # =====================================================
 
 col1, col2 = st.columns([4, 1])
@@ -142,14 +178,16 @@ st.divider()
 
 
 # =====================================================
-# 6. CONEXIÓN CON GITHUB
+# 8. CONEXIÓN CON GITHUB
 # =====================================================
 
 st.subheader("Almacenamiento de archivos")
 
 try:
 
-    if comprobar_conexion():
+    conexion = comprobar_conexion()
+
+    if conexion:
 
         st.success("Conexión con GitHub establecida.")
 
@@ -157,59 +195,73 @@ try:
 
         st.error("No fue posible conectar con GitHub.")
 
+        st.stop()
+
 except Exception as error:
 
     st.error(f"Error de conexión: {error}")
+    st.stop()
 
 
 st.divider()
 
 
 # =====================================================
-# 7. ACTUALIZACIÓN DEL MRP
+# 9. ACTUALIZACIÓN DEL ARCHIVO MRP
 # =====================================================
 
 st.subheader("Actualización del archivo MRP")
 
 st.write(
     "Carga aquí el archivo de planificación MRP. "
-    "La nueva versión reemplazará el archivo almacenado "
-    "en GitHub y estará disponible para el dashboard."
+    "El sistema reemplazará la versión anterior "
+    "almacenada en GitHub."
 )
 
 archivo_mrp = st.file_uploader(
     "Seleccionar archivo MRP",
     type=["xlsm"],
     accept_multiple_files=False,
+    key=f"archivo_mrp_{st.session_state.mrp_uploader_version}",
     help="Selecciona el archivo Excel MRP con extensión .xlsm."
 )
 
 
 if archivo_mrp is not None:
 
-    st.write("**Archivo seleccionado:**", archivo_mrp.name)
+    st.write(
+        "**Archivo seleccionado:**",
+        archivo_mrp.name
+    )
 
-    tamano_mb = len(archivo_mrp.getvalue()) / (1024 * 1024)
+    contenido_original = archivo_mrp.getvalue()
 
-    st.write(f"**Tamaño:** {tamano_mb:.2f} MB")
+    tamano_mb = len(contenido_original) / (1024 * 1024)
+
+    st.write(
+        f"**Tamaño:** {tamano_mb:.2f} MB"
+    )
 
     if tamano_mb >= 90:
 
         st.error(
-            "El archivo es demasiado grande "
+            "El archivo supera el límite permitido "
             "para esta implementación."
         )
+
+    elif not archivo_mrp.name.lower().endswith(".xlsm"):
+
+        st.error("Debes seleccionar un archivo .xlsm.")
 
     else:
 
         st.warning(
-            "Al confirmar, el MRP anterior será "
-            "reemplazado por el nuevo."
+            "Al confirmar, el archivo MRP anterior "
+            "será reemplazado por el nuevo."
         )
 
         confirmar = st.checkbox(
-            "Confirmo que deseo reemplazar el MRP almacenado.",
-            key="confirmar_reemplazo_mrp"
+            "Confirmo que deseo reemplazar el MRP almacenado."
         )
 
         if st.button(
@@ -222,49 +274,44 @@ if archivo_mrp is not None:
             try:
 
                 with st.spinner(
-                    "Subiendo y verificando el archivo en GitHub..."
+                    "Guardando y verificando el archivo en GitHub..."
                 ):
 
-                    resultado = subir_archivo_github(
+                    # Subir y reemplazar archivo
+                    subir_archivo_github(
                         archivo_mrp,
                         RUTA_MRP
                     )
 
-                    # Limpiar caché del lector MRP
+                    # Descargar nuevamente desde GitHub
+                    archivo_verificado = descargar_archivo_github(
+                        RUTA_MRP
+                    )
 
-                    from modules.mrp_reader import cargar_mrp
+                    # Comprobar que el archivo se guardó correctamente
+                    if archivo_verificado is None:
 
-                    cargar_mrp.clear()
+                        raise Exception(
+                            "GitHub no devolvió el archivo guardado."
+                        )
 
-                st.session_state["mrp_actualizado"] = True
-                st.session_state["mrp_resultado"] = resultado
+                    if archivo_verificado != contenido_original:
 
-                st.success(
-                    "¡El MRP fue actualizado y verificado correctamente!"
-                )
+                        raise Exception(
+                            "El archivo descargado no coincide "
+                            "con el archivo que se intentó subir."
+                        )
 
-                st.write("**Ruta:**", resultado["ruta"])
+                # Cerrar sesión automáticamente
+                st.session_state.admin_autenticada = False
 
-                st.write(
-                    "**SHA del archivo:**",
-                    resultado["sha_archivo"]
-                )
+                # Generar una nueva clave para el cargador
+                st.session_state.mrp_uploader_version += 1
 
-                st.write(
-                    "**SHA del commit:**",
-                    resultado["sha_commit"]
-                )
+                # Mostrar confirmación después del rerun
+                st.session_state.mrp_actualizado = True
 
-                st.write(
-                    "**Tamaño almacenado:**",
-                    f'{resultado["tamano"] / (1024 * 1024):.2f} MB'
-                )
-
-                st.info(
-                    "La nueva versión ya está disponible "
-                    "en GitHub. La caché del lector MRP "
-                    "también fue limpiada."
-                )
+                st.rerun()
 
             except Exception as error:
 
@@ -273,14 +320,18 @@ if archivo_mrp is not None:
                 )
 
 
+# =====================================================
+# 10. CONSULTAR ARCHIVO ALMACENADO
+# =====================================================
+
 st.divider()
 
-
-# =====================================================
-# 8. CONSULTAR ARCHIVO ALMACENADO
-# =====================================================
-
 st.subheader("Archivo MRP almacenado")
+
+st.write(
+    "Puedes comprobar si existe un archivo MRP "
+    "guardado actualmente en GitHub."
+)
 
 if st.button(
     "Consultar archivo actual",
@@ -289,63 +340,45 @@ if st.button(
 
     try:
 
-        informacion = obtener_info_archivo(RUTA_MRP)
+        with st.spinner("Consultando GitHub..."):
 
-        if informacion is not None:
+            archivo_guardado = descargar_archivo_github(
+                RUTA_MRP
+            )
+
+        if archivo_guardado is not None:
 
             st.success(
-                "Se encontró el archivo MRP en GitHub."
+                "Existe un archivo MRP almacenado en GitHub."
             )
 
-            st.write(
-                "**Nombre:**",
-                informacion.get("name")
+            tamano_guardado = (
+                len(archivo_guardado) / (1024 * 1024)
             )
 
-            st.write(
-                "**Ruta:**",
-                informacion.get("path")
-            )
-
-            st.write(
-                "**Tamaño:**",
-                f'{informacion.get("size", 0) / (1024 * 1024):.2f} MB'
-            )
-
-            st.write(
-                "**SHA actual:**",
-                informacion.get("sha")
-            )
-
-            st.write(
-                "**Última actualización:**",
-                informacion.get("git_url")
-            )
-
-            st.write(
-                "**Último commit:**",
-                informacion.get("html_url")
+            st.metric(
+                "Tamaño del archivo almacenado",
+                f"{tamano_guardado:.2f} MB"
             )
 
         else:
 
             st.warning(
-                "No existe ningún archivo MRP en la ruta indicada."
+                "Todavía no se ha cargado ningún archivo MRP."
             )
 
     except Exception as error:
 
         st.error(
-            f"No fue posible consultar GitHub: {error}"
+            f"No fue posible consultar el archivo: {error}"
         )
 
 
+# =====================================================
+# 11. VERIFICACIÓN DE DATOS DEL MRP
+# =====================================================
+
 st.divider()
-
-
-# =====================================================
-# 9. VERIFICACIÓN DE DATOS DEL MRP
-# =====================================================
 
 st.subheader("Verificación de datos del MRP")
 
@@ -356,16 +389,11 @@ if st.button(
 
     try:
 
-        from modules.mrp_reader import (
-            cargar_mrp,
-            obtener_resumen_mrp
-        )
+        from modules.mrp_reader import obtener_resumen_mrp
 
         with st.spinner(
-            "Descargando y leyendo la última versión del MRP..."
+            "Leyendo archivo MRP desde GitHub..."
         ):
-
-            cargar_mrp.clear()
 
             resultado = obtener_resumen_mrp()
 
@@ -373,8 +401,8 @@ if st.button(
             "La hoja NS se leyó correctamente."
         )
 
-        st.write(
-            "**Cantidad de registros:**",
+        st.metric(
+            "Cantidad de registros",
             resultado["cantidad_registros"]
         )
 
@@ -391,7 +419,8 @@ if st.button(
 
         st.dataframe(
             resultado["datos"].head(15),
-            use_container_width=True
+            use_container_width=True,
+            hide_index=True
         )
 
     except Exception as error:
@@ -402,7 +431,7 @@ if st.button(
 
 
 # =====================================================
-# 10. PIE DE PÁGINA
+# 12. PIE DE PÁGINA
 # =====================================================
 
 st.divider()
