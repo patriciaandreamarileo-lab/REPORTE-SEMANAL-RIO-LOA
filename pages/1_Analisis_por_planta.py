@@ -1,14 +1,29 @@
-
 import streamlit as st
+
+from modules.navegacion import configurar_navegacion
+
 
 # ==========================================
 # CONFIGURACIÓN
 # ==========================================
 
-st.title("Análisis por planta")
+st.set_page_config(
+    page_title="Análisis por planta | Enaex",
+    page_icon="🏭",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+configurar_navegacion()
+
+
+# ==========================================
+# ESTILOS
+# ==========================================
 
 st.markdown("""
 <style>
+
 .plant-description {
     color: #64748B;
     font-size: 16px;
@@ -33,22 +48,31 @@ st.markdown("""
     color: #64748B;
     margin-bottom: 18px;
 }
+
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown(
-    '<div class="plant-description">'
-    'Selecciona una planta para consultar sus indicadores '
-    'y analizar el comportamiento de sus materias primas.'
-    '</div>',
-    unsafe_allow_html=True
-)
 
 # ==========================================
-# PLANTAS
+# ENCABEZADO
+# ==========================================
+
+st.title("Análisis por planta")
+
+st.markdown("""
+<div class="plant-description">
+Selecciona una planta para consultar sus indicadores
+y analizar el comportamiento de sus materias primas.
+</div>
+""", unsafe_allow_html=True)
+
+
+# ==========================================
+# INFORMACIÓN DE LAS PLANTAS
 # ==========================================
 
 plantas = {
+
     "RIO LOA": {
         "numero": "01",
         "ubicacion": "Calama",
@@ -56,6 +80,7 @@ plantas = {
         "fondo": "#E6EFF9",
         "icono": "🏭"
     },
+
     "PRILLEX": {
         "numero": "02",
         "ubicacion": "Mejillones",
@@ -63,6 +88,7 @@ plantas = {
         "fondo": "#E5F1E9",
         "icono": "🏭"
     },
+
     "PUNTA TEATINOS": {
         "numero": "03",
         "ubicacion": "La Serena",
@@ -70,7 +96,9 @@ plantas = {
         "fondo": "#F5EDE3",
         "icono": "🏭"
     }
+
 }
+
 
 # ==========================================
 # ESTADO DE SELECCIÓN
@@ -85,7 +113,7 @@ def seleccionar_planta(nombre):
 
 
 # ==========================================
-# MOSTRAR TARJETAS
+# TARJETAS DE SELECCIÓN
 # ==========================================
 
 if st.session_state.planta_seleccionada is None:
@@ -106,20 +134,25 @@ if st.session_state.planta_seleccionada is None:
                         border-radius: 10px;
                         margin-bottom: 15px;
                     ">
+
                         <div class="plant-number"
                              style="color: {datos['color']};">
                             PLANTA {datos['numero']}
                         </div>
+
                         <div style="font-size: 35px;">
                             {datos['icono']}
                         </div>
+
                         <div class="plant-name"
                              style="color: {datos['color']};">
                             {nombre}
                         </div>
+
                         <div class="plant-location">
                             {datos['ubicacion']}
                         </div>
+
                     </div>
                     """,
                     unsafe_allow_html=True
@@ -159,9 +192,14 @@ else:
             border-radius: 12px;
             border-left: 6px solid {datos['color']};
         ">
-            <div style="font-size: 13px; color: {datos['color']};">
+
+            <div style="
+                font-size: 13px;
+                color: {datos['color']};
+            ">
                 ANÁLISIS INDIVIDUAL
             </div>
+
             <div style="
                 font-size: 30px;
                 font-weight: 750;
@@ -169,9 +207,11 @@ else:
             ">
                 {nombre}
             </div>
+
             <div style="color: #64748B;">
                 {datos['ubicacion']} | Enaex Chile
             </div>
+
         </div>
         """,
         unsafe_allow_html=True
