@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import unicodedata
 
 from io import BytesIO
+
 from modules.navegacion import configurar_navegacion
 from modules.github_storage import descargar_archivo_github
 
@@ -21,6 +23,8 @@ st.set_page_config(
 configurar_navegacion()
 
 RUTA_PRECIOS = "data/PRECIOS/precios_rio_loa.xlsx"
+RUTA_MRP = "data/MRP/Planificacion_MRP.xlsm"
+
 CENTRO_RIO_LOA = "E024"
 
 
@@ -41,13 +45,6 @@ st.markdown("""
     margin-bottom: 20px;
 }
 
-div[data-testid="stMetric"] {
-    background: white;
-    padding: 16px;
-    border-radius: 10px;
-    border: 1px solid #E2E8F0;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -65,6 +62,31 @@ def limpiar_texto(serie):
         .str.strip()
         .str.replace(r"\.0$", "", regex=True)
     )
+
+
+def normalizar_codigo(valor):
+
+    if pd.isna(valor):
+        return ""
+
+    codigo = str(valor).strip()
+
+    if codigo.endswith(".0"):
+        codigo = codigo[:-2]
+
+    return codigo.upper()
+
+
+def normalizar_encabezado(valor):
+
+    texto = str(valor).strip().lower()
+
+    texto = unicodedata.normalize(
+        "NFKD",
+        texto
+    ).encode("ascii", "ignore").decode("ascii")
+
+    return texto
 
 
 def convertir_numero(serie):
@@ -89,7 +111,7 @@ def formato_numero(valor, decimales=2):
 
 
 # =====================================================
-# 4. CARGAR ARCHIVO DE PRECIOS DESDE GITHUB
+# 4. CARGAR ARCHIVO DE PRECIOS
 # =====================================================
 
 @st.cache_data(ttl=60)
@@ -102,8 +124,7 @@ def cargar_precios():
     if contenido is None:
 
         raise Exception(
-            "No se encontró el archivo de precios "
-            "en GitHub."
+            "No se encontró el archivo de precios en GitHub."
         )
 
     df = pd.read_excel(
@@ -121,7 +142,118 @@ def cargar_precios():
 
 
 # =====================================================
-# 5. ACTUALIZACIÓN DE DATOS
+# 5. CARGAR PROVEEDORES DESDE EL MRP
+# =====================================================
+
+@st.cache_data(ttl=60)
+def cargar_maestro_proveedores():
+
+    contenido = descargar_archivo_github(
+        RUTA_MRP
+    )
+
+    if contenido is None:
+
+        raise Exception(
+            "No se encontró el archivo MRP en GitHub."
+        )
+
+    archivo = BytesIO(contenido)
+
+    df_original = pd.read_excel(
+        archivo,
+        sheet_name="Prov. valid",
+        header=None,
+        engine="openpyxl"
+    )
+
+    # Buscar la fila que contiene los encabezados
+    # exactos Acreedor y Proveedor.
+
+    fila_encabezado = None
+    columna_acreedor = None
+    columna_proveedor = None
+
+    for i in range(len(df_original)):
+
+        encabezados = [
+            normalizar_encabezado(valor)
+            for valor in df_original.iloc[i].tolist()
+        ]
+
+        if (
+            "acreedor" in encabezados
+            and "proveedor" in encabezados
+        ):
+
+            fila_encabezado = i
+
+            columna_acreedor = encabezados.index(
+                "acreedor"
+            )
+
+            columna_proveedor = encabezados.index(
+                "proveedor"
+            )
+
+            break
+
+    if fila_encabezado is None:
+
+        raise Exception(
+            "No se encontraron las columnas Acreedor "
+            "y Proveedor en la hoja Prov. valid del MRP."
+        )
+
+    # Extraer únicamente las dos columnas necesarias.
+
+    proveedores = df_original.iloc[
+        fila_encabezado + 1:
+    ][
+        [
+            columna_acreedor,
+            columna_proveedor
+        ]
+    ].copy()
+
+    proveedores.columns = [
+        "Codigo proveedor",
+        "Nombre proveedor"
+    ]
+
+    # Limpiar códigos y nombres.
+
+    proveedores["Codigo proveedor"] = (
+        proveedores["Codigo proveedor"]
+        .apply(normalizar_codigo)
+    )
+
+    proveedores["Nombre proveedor"] = (
+        proveedores["Nombre proveedor"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    # Eliminar filas vacías.
+
+    proveedores = proveedores[
+        (proveedores["Codigo proveedor"] != "")
+        & (proveedores["Nombre proveedor"] != "")
+    ].copy()
+
+    # Evitar códigos duplicados.
+
+    proveedores = proveedores.drop_duplicates(
+        subset=["Codigo proveedor"],
+        keep="first"
+    )
+
+    return proveedores.reset_index(drop=True)
+
+
+# =====================================================
+# 6. BOTÓN DE ACTUALIZACIÓN
 # =====================================================
 
 col_actualizar, col_estado = st.columns([1, 3])
@@ -137,29 +269,36 @@ with col_actualizar:
         st.rerun()
 
 
+# =====================================================
+# 7. OBTENER LOS ARCHIVOS
+# =====================================================
+
 try:
 
     datos_originales = cargar_precios()
 
-    if datos_originales.empty:
-
-        st.error(
-            "El archivo de precios no contiene registros."
-        )
-
-        st.stop()
+    maestro_proveedores = cargar_maestro_proveedores()
 
 except Exception as error:
 
     st.error(
-        f"No fue posible cargar los precios desde GitHub: {error}"
+        f"No fue posible cargar la información: {error}"
+    )
+
+    st.stop()
+
+
+if datos_originales.empty:
+
+    st.error(
+        "El archivo de precios no contiene registros."
     )
 
     st.stop()
 
 
 # =====================================================
-# 6. VALIDAR COLUMNAS
+# 8. VALIDAR COLUMNAS DEL ARCHIVO DE PRECIOS
 # =====================================================
 
 columnas_requeridas = [
@@ -183,7 +322,7 @@ faltantes = [
 if faltantes:
 
     st.error(
-        "Faltan columnas necesarias en el archivo: "
+        "Faltan columnas necesarias en el Excel de precios: "
         + ", ".join(faltantes)
     )
 
@@ -191,19 +330,19 @@ if faltantes:
 
 
 # =====================================================
-# 7. PREPARAR INFORMACIÓN
+# 9. PREPARAR DATOS DE PRECIOS
 # =====================================================
 
 datos = datos_originales.copy()
 
-# Normalizar centro
+# Centro
 
 datos["Centro"] = (
     limpiar_texto(datos["Centro"])
     .str.upper()
 )
 
-# Filtrar exclusivamente Río Loa
+# Filtrar Río Loa
 
 datos = datos[
     datos["Centro"] == CENTRO_RIO_LOA
@@ -212,17 +351,17 @@ datos = datos[
 if datos.empty:
 
     st.error(
-        "No se encontraron registros del centro E024 "
-        "en el archivo de precios."
+        "No se encontraron registros del centro E024."
     )
 
     st.stop()
 
 
-# Normalizar código de material
+# Código del material
 
-datos["Material"] = limpiar_texto(
+datos["Material"] = (
     datos["Material"]
+    .apply(normalizar_codigo)
 )
 
 
@@ -242,13 +381,25 @@ elif "Descripción del material" in datos.columns:
 
 else:
 
-    datos["Descripción"] = datos["Material"]
+    st.error(
+        "No se encontró la columna de descripción del material."
+    )
+
+    st.stop()
 
 
 # Número de OC
 
 datos["Pedido"] = limpiar_texto(
     datos["Pedido"]
+)
+
+
+# Código del proveedor proveniente del Excel de precios
+
+datos["Codigo proveedor"] = (
+    datos["Proveedor"]
+    .apply(normalizar_codigo)
 )
 
 
@@ -260,37 +411,16 @@ datos["Moneda"] = (
 )
 
 
-# Proveedor
-
-if "Nombre 1" in datos.columns:
-
-    datos["Nombre proveedor"] = limpiar_texto(
-        datos["Nombre 1"]
-    )
-
-    datos["Nombre proveedor"] = (
-        datos["Nombre proveedor"]
-        .replace("", pd.NA)
-        .fillna(limpiar_texto(datos["Proveedor"]))
-    )
-
-else:
-
-    datos["Nombre proveedor"] = limpiar_texto(
-        datos["Proveedor"]
-    )
-
-
 # Fecha
 
-datos["Fecha contabiliz."] = pd.to_datetime(
+datos["Fecha"] = pd.to_datetime(
     datos["Fecha contabiliz."],
     errors="coerce",
     dayfirst=True
 )
 
 
-# Valores numéricos
+# Cantidad e importe
 
 datos["Cantidad"] = convertir_numero(
     datos["Ctd.en UM entrada"]
@@ -301,24 +431,57 @@ datos["Importe"] = convertir_numero(
 )
 
 
-# Tipos de movimiento
+# =====================================================
+# 10. CRUCE CON LA HOJA PROV. VALID DEL MRP
+# =====================================================
+
+# El código de proveedor del Excel de precios
+# se compara con la columna Acreedor del MRP.
+#
+# El nombre que se incorpora proviene de la columna
+# Proveedor del MRP.
+
+datos = datos.merge(
+    maestro_proveedores,
+    on="Codigo proveedor",
+    how="left"
+)
+
+
+# Identificar proveedores sin coincidencia.
+
+proveedores_sin_match = (
+    datos.loc[
+        datos["Nombre proveedor"].isna(),
+        "Codigo proveedor"
+    ]
+    .drop_duplicates()
+    .tolist()
+)
+
+datos["Nombre proveedor"] = (
+    datos["Nombre proveedor"]
+    .fillna("Proveedor no encontrado")
+)
+
+
+# =====================================================
+# 11. FILTRAR MOVIMIENTOS DE ENTRADA Y REVERSA
+# =====================================================
 
 datos["Clase de movimiento"] = limpiar_texto(
     datos["Clase de movimiento"]
 )
-
 
 datos = datos[
     datos["Clase de movimiento"].isin(["101", "102"])
 ].copy()
 
 
-# Eliminar registros sin información esencial
-
 datos = datos.dropna(
     subset=[
         "Material",
-        "Fecha contabiliz.",
+        "Fecha",
         "Cantidad",
         "Importe"
     ]
@@ -328,25 +491,31 @@ datos = datos.dropna(
 datos = datos[
     (datos["Cantidad"] != 0)
     & (datos["Importe"] != 0)
-]
+].copy()
+
+
+if datos.empty:
+
+    st.warning(
+        "No existen movimientos válidos para analizar."
+    )
+
+    st.stop()
 
 
 # =====================================================
-# 8. CONSOLIDAR ÓRDENES DE COMPRA
+# 12. CONSOLIDAR REGISTROS POR OC
 # =====================================================
-
-# Se agrupan los movimientos 101 y 102 por OC,
-# material y moneda. De esta manera se consideran
-# las anulaciones o reversiones cuando sus cantidades
-# e importes vienen con signo contrario en SAP.
 
 agrupacion = [
     "Material",
     "Descripción",
     "Pedido",
     "Moneda",
+    "Codigo proveedor",
     "Nombre proveedor"
 ]
+
 
 datos_precios = (
     datos
@@ -355,7 +524,7 @@ datos_precios = (
         dropna=False
     )
     .agg(
-        Fecha=("Fecha contabiliz.", "min"),
+        Fecha=("Fecha", "min"),
         Cantidad=("Cantidad", "sum"),
         Importe=("Importe", "sum")
     )
@@ -363,7 +532,7 @@ datos_precios = (
 )
 
 
-# Precio unitario ponderado por cantidad
+# Precio unitario calculado como importe / cantidad.
 
 datos_precios["Precio unitario"] = (
     datos_precios["Importe"].abs()
@@ -371,7 +540,7 @@ datos_precios["Precio unitario"] = (
 )
 
 
-# Eliminar órdenes sin cantidad neta o sin precio válido
+# Eliminar registros sin cantidad neta o precio válido.
 
 datos_precios = datos_precios[
     (datos_precios["Cantidad"] != 0)
@@ -379,8 +548,6 @@ datos_precios = datos_precios[
     & (datos_precios["Fecha"].notna())
 ].copy()
 
-
-# Orden cronológico
 
 datos_precios = datos_precios.sort_values(
     "Fecha"
@@ -390,14 +557,14 @@ datos_precios = datos_precios.sort_values(
 if datos_precios.empty:
 
     st.warning(
-        "No existen registros válidos para analizar precios."
+        "No existen precios unitarios válidos para mostrar."
     )
 
     st.stop()
 
 
 # =====================================================
-# 9. ENCABEZADO
+# 13. ENCABEZADO
 # =====================================================
 
 st.title("Evolución de precios")
@@ -451,7 +618,7 @@ st.markdown(
 
 
 # =====================================================
-# 10. RANKING DE MATERIAS PRIMAS CON MAYORES CAMBIOS
+# 14. MATERIAS PRIMAS CON MAYORES VARIACIONES
 # =====================================================
 
 st.subheader(
@@ -460,18 +627,17 @@ st.subheader(
 
 st.markdown(
     "Se identifican las materias primas que presentan "
-    "las mayores variaciones entre su primer y último "
-    "precio registrado, comparando siempre dentro "
-    "de una misma moneda."
+    "los mayores cambios entre su primer y último precio "
+    "registrado, comparando siempre dentro de una misma moneda."
 )
 
+
+resultados_ranking = []
 
 ranking_base = datos_precios.sort_values(
     "Fecha"
 ).copy()
 
-
-resultados_ranking = []
 
 for (codigo, moneda), grupo in ranking_base.groupby(
     ["Material", "Moneda"]
@@ -500,7 +666,7 @@ for (codigo, moneda), grupo in ranking_base.groupby(
 
         "Código": codigo,
 
-        "Materia prima": grupo.iloc[0]["Descripción"],
+        "Materia prima": primer_registro["Descripción"],
 
         "Moneda": moneda,
 
@@ -523,7 +689,7 @@ if not ranking.empty:
     ranking = ranking.sort_values(
         "Variación absoluta (%)",
         ascending=False
-    ).head(4).reset_index(drop=True)
+    ).head(4).copy()
 
     ranking["Precio inicial"] = ranking[
         "Precio inicial"
@@ -576,7 +742,7 @@ st.divider()
 
 
 # =====================================================
-# 11. BUSCADOR DE MATERIAS PRIMAS
+# 15. BUSCADOR DE MATERIAS PRIMAS
 # =====================================================
 
 st.subheader(
@@ -588,8 +754,6 @@ st.markdown(
     "para consultar la evolución de sus precios."
 )
 
-
-# Crear catálogo de materiales
 
 catalogo = (
     datos_precios[
@@ -607,8 +771,6 @@ catalogo["Etiqueta"] = (
     + catalogo["Descripción"].astype(str)
 )
 
-
-# Buscador
 
 busqueda = st.text_input(
     "Buscar materia prima",
@@ -641,8 +803,7 @@ if busqueda:
 if catalogo_filtrado.empty:
 
     st.warning(
-        "No se encontraron materias primas con ese código "
-        "o descripción."
+        "No se encontraron materias primas con esa búsqueda."
     )
 
     st.stop()
@@ -661,8 +822,6 @@ material_seleccionado = catalogo_filtrado[
 
 codigo_seleccionado = material_seleccionado["Material"]
 
-
-# Filtrar material seleccionado
 
 detalle = datos_precios[
     datos_precios["Material"] == codigo_seleccionado
@@ -684,7 +843,7 @@ st.caption(
 
 
 # =====================================================
-# 12. INDICADORES DEL MATERIAL
+# 16. INDICADORES DEL MATERIAL
 # =====================================================
 
 col1, col2, col3 = st.columns(3)
@@ -706,7 +865,7 @@ col3.metric(
 
 
 # =====================================================
-# 13. MONEDAS DISPONIBLES
+# 17. MONEDAS DEL MATERIAL
 # =====================================================
 
 st.subheader(
@@ -730,20 +889,19 @@ columnas_monedas = st.columns(
 for i, moneda in enumerate(monedas):
 
     columnas_monedas[i].metric(
-        "Moneda",
+        "Moneda registrada",
         moneda
     )
 
 
 st.caption(
-    "Los precios se muestran en su moneda original. "
-    "USD y CLP se representan en escalas separadas "
-    "para evitar comparaciones incorrectas."
+    "Los precios se presentan en su moneda original. "
+    "CLP y USD se muestran en escalas separadas."
 )
 
 
 # =====================================================
-# 14. GRÁFICO DE EVOLUCIÓN DE PRECIOS
+# 18. GRÁFICO DE EVOLUCIÓN DE PRECIOS
 # =====================================================
 
 st.subheader(
@@ -772,9 +930,6 @@ else:
         + "<br>Proveedor: "
         + detalle_grafico["Nombre proveedor"].astype(str)
     )
-
-    # Cada moneda se presenta en un panel independiente.
-    # Así no se mezclan escalas de USD y CLP.
 
     figura = px.line(
         detalle_grafico,
@@ -849,7 +1004,7 @@ else:
 
 
 # =====================================================
-# 15. TABLA DE DETALLE DE ÓRDENES DE COMPRA
+# 19. TABLA DE DETALLE DE ÓRDENES DE COMPRA
 # =====================================================
 
 st.subheader(
@@ -888,6 +1043,12 @@ tabla_detalle = tabla_detalle.rename(
 )
 
 
+tabla_detalle = tabla_detalle.sort_values(
+    "Fecha de OC (contabilización)",
+    ascending=True
+)
+
+
 tabla_detalle["Fecha de OC (contabilización)"] = (
     tabla_detalle["Fecha de OC (contabilización)"]
     .dt.strftime("%d-%m-%Y")
@@ -902,12 +1063,6 @@ tabla_detalle["Precio unitario"] = (
 )
 
 
-tabla_detalle = tabla_detalle.sort_values(
-    "Fecha de OC (contabilización)",
-    ascending=True
-)
-
-
 st.dataframe(
     tabla_detalle,
     use_container_width=True,
@@ -916,7 +1071,30 @@ st.dataframe(
 
 
 # =====================================================
-# 16. PIE DE PÁGINA
+# 20. AVISO DE PROVEEDORES SIN COINCIDENCIA
+# =====================================================
+
+if proveedores_sin_match:
+
+    with st.expander(
+        "Revisar códigos de proveedores sin coincidencia"
+    ):
+
+        st.warning(
+            "Algunos códigos del Excel de precios no se "
+            "encontraron en la hoja Prov. valid del MRP."
+        )
+
+        st.write(
+            pd.DataFrame({
+                "Código de proveedor sin coincidencia":
+                proveedores_sin_match
+            })
+        )
+
+
+# =====================================================
+# 21. PIE DE PÁGINA
 # =====================================================
 
 st.markdown(
