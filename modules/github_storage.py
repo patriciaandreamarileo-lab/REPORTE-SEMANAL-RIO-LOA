@@ -1,4 +1,3 @@
-
 import streamlit as st
 import requests
 import base64
@@ -6,7 +5,7 @@ from pathlib import PurePosixPath
 
 
 # =====================================================
-# CONFIGURACIÓN DE GITHUB
+# 1. CONFIGURACIÓN DE GITHUB
 # =====================================================
 
 def obtener_configuracion():
@@ -29,7 +28,7 @@ def obtener_headers():
 
 
 # =====================================================
-# CONSTRUIR DIRECCIÓN DEL ARCHIVO
+# 2. DIRECCIÓN DEL ARCHIVO
 # =====================================================
 
 def obtener_url(ruta):
@@ -42,7 +41,7 @@ def obtener_url(ruta):
 
 
 # =====================================================
-# CONSULTAR ARCHIVO EXISTENTE
+# 3. OBTENER IDENTIFICADOR DEL ARCHIVO
 # =====================================================
 
 def obtener_sha(ruta):
@@ -50,6 +49,7 @@ def obtener_sha(ruta):
     respuesta = requests.get(
         obtener_url(ruta),
         headers=obtener_headers(),
+        params={"ref": "main"},
         timeout=30
     )
 
@@ -60,13 +60,13 @@ def obtener_sha(ruta):
         return None
 
     raise Exception(
-        f"Error consultando GitHub: {respuesta.status_code} "
-        f"- {respuesta.text}"
+        f"Error consultando GitHub: "
+        f"{respuesta.status_code} - {respuesta.text}"
     )
 
 
 # =====================================================
-# SUBIR O REEMPLAZAR ARCHIVO
+# 4. SUBIR O REEMPLAZAR ARCHIVOS
 # =====================================================
 
 def subir_archivo_github(archivo, ruta):
@@ -81,10 +81,10 @@ def subir_archivo_github(archivo, ruta):
 
     datos = {
         "message": f"Actualización de archivo: {ruta}",
-        "content": contenido_base64
+        "content": contenido_base64,
+        "branch": "main"
     }
 
-    # Si el archivo ya existe, se reemplaza
     if sha:
         datos["sha"] = sha
 
@@ -92,7 +92,7 @@ def subir_archivo_github(archivo, ruta):
         obtener_url(ruta),
         headers=obtener_headers(),
         json=datos,
-        timeout=120
+        timeout=180
     )
 
     if respuesta.status_code not in (200, 201):
@@ -106,16 +106,17 @@ def subir_archivo_github(archivo, ruta):
 
 
 # =====================================================
-# DESCARGAR ARCHIVO DESDE GITHUB
+# 5. DESCARGAR ARCHIVOS DESDE GITHUB
 # =====================================================
 
 def descargar_archivo_github(ruta):
 
+    # Primero consultamos los metadatos del archivo
     respuesta = requests.get(
         obtener_url(ruta),
         headers=obtener_headers(),
         params={"ref": "main"},
-        timeout=60
+        timeout=30
     )
 
     if respuesta.status_code == 404:
@@ -124,17 +125,49 @@ def descargar_archivo_github(ruta):
     if respuesta.status_code != 200:
 
         raise Exception(
-            f"Error descargando archivo: "
+            f"Error consultando archivo: "
             f"{respuesta.status_code} - {respuesta.text}"
         )
 
-    contenido = respuesta.json()["content"]
+    informacion = respuesta.json()
 
-    return base64.b64decode(contenido)
+    # Obtenemos la dirección del archivo original
+    url_descarga = informacion.get("download_url")
+
+    if not url_descarga:
+        raise Exception(
+            "GitHub no entregó la dirección de descarga del archivo."
+        )
+
+    # Descargamos los bytes originales, sin convertirlos a JSON
+    headers_descarga = {
+        "Authorization": f"Bearer {obtener_configuracion()[0]}",
+        "Accept": "application/octet-stream"
+    }
+
+    descarga = requests.get(
+        url_descarga,
+        headers=headers_descarga,
+        timeout=180
+    )
+
+    if descarga.status_code != 200:
+
+        raise Exception(
+            f"Error descargando archivo: "
+            f"{descarga.status_code}"
+        )
+
+    contenido = descarga.content
+
+    if not contenido:
+        raise Exception("El archivo descargado está vacío.")
+
+    return contenido
 
 
 # =====================================================
-# COMPROBAR CONEXIÓN
+# 6. COMPROBAR CONEXIÓN
 # =====================================================
 
 def comprobar_conexion():
