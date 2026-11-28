@@ -1,3 +1,4 @@
+
 import streamlit as st
 
 # ==========================================
@@ -5,11 +6,12 @@ import streamlit as st
 # ==========================================
 
 st.set_page_config(
-    page_title="Dashboard Enaex Chile",
+    page_title="Dashboard Enaex Chile | Río Loa",
     page_icon="🏭",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 
 # ==========================================
 # COLORES Y DISEÑO
@@ -18,22 +20,69 @@ st.set_page_config(
 st.markdown("""
 <style>
 
+/* FONDO GENERAL */
+
 .stApp {
     background-color: #F4F7FB;
 }
 
+
+/* PANEL LATERAL AZUL */
+
+section[data-testid="stSidebar"] {
+    background-color: #102B46 !important;
+}
+
+section[data-testid="stSidebar"] > div {
+    background-color: #102B46 !important;
+}
+
 [data-testid="stSidebar"] {
-    background-color: #102B46;
+    background-color: #102B46 !important;
 }
 
-/* Ocultar navegación automática de Streamlit */
-[data-testid="stSidebarNav"] {
-    display: none;
-}
+/* Todos los textos del menú lateral */
 
-[data-testid="stSidebar"] * {
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] a,
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
     color: white !important;
 }
+
+/* Iconos */
+
+[data-testid="stSidebar"] svg {
+    color: white !important;
+    fill: white !important;
+}
+
+/* Botones y enlaces del menú */
+
+[data-testid="stSidebar"] [data-testid="stPageLink"] {
+    background-color: transparent !important;
+    border-radius: 9px !important;
+}
+
+/* Efecto al pasar el mouse */
+
+[data-testid="stSidebar"] [data-testid="stPageLink"]:hover {
+    background-color: #244967 !important;
+    border-radius: 9px !important;
+}
+
+/* Navegación automática */
+
+[data-testid="stSidebarNav"] {
+    display: none !important;
+}
+
+
+/* TÍTULOS */
 
 .main-title {
     font-size: 34px;
@@ -47,6 +96,9 @@ st.markdown("""
     color: #64748B;
     margin-bottom: 25px;
 }
+
+
+/* ENCABEZADO */
 
 .header-box {
     background: linear-gradient(110deg, #123454, #24669A);
@@ -66,6 +118,9 @@ st.markdown("""
     font-size: 15px;
 }
 
+
+/* TARJETAS */
+
 .card-title {
     color: #173B60;
     font-size: 21px;
@@ -78,6 +133,9 @@ st.markdown("""
     font-size: 14px;
     min-height: 75px;
 }
+
+
+/* PIE DE PÁGINA */
 
 .footer {
     color: #8492A6;
@@ -97,6 +155,7 @@ st.markdown("""
 with st.sidebar:
 
     st.markdown("## ENAEX CHILE")
+
     st.caption("Gestión de materias primas")
 
     st.divider()
@@ -138,12 +197,15 @@ with st.sidebar:
 
 st.markdown("""
 <div class="header-box">
+
     <div class="header-title">
         DASHBOARD DE GESTIÓN DE MATERIAS PRIMAS
     </div>
+
     <div class="header-subtitle">
         ENAEX CHILE | Planificación, consumo y análisis de precios
     </div>
+
 </div>
 """, unsafe_allow_html=True)
 
@@ -173,7 +235,9 @@ st.markdown(
 col1, col2, col3 = st.columns(3, gap="large")
 
 
+# ==========================================
 # TARJETA 1: ANÁLISIS POR PLANTA
+# ==========================================
 
 with col1:
 
@@ -190,7 +254,7 @@ with col1:
             '<div class="card-description">'
             'Consulta los indicadores de inventario, cobertura, '
             'nivel de servicio y situación de las materias primas '
-            'de cada planta.'
+            'de Río Loa.'
             '</div>',
             unsafe_allow_html=True
         )
@@ -203,7 +267,9 @@ with col1:
         )
 
 
+# ==========================================
 # TARJETA 2: CONSUMO PROMEDIO
+# ==========================================
 
 with col2:
 
@@ -219,8 +285,8 @@ with col2:
         st.markdown(
             '<div class="card-description">'
             'Analiza el comportamiento histórico del consumo, '
-            'sus variaciones mensuales y las tendencias de '
-            'las materias primas.'
+            'sus variaciones mensuales y las proyecciones '
+            'de las materias primas.'
             '</div>',
             unsafe_allow_html=True
         )
@@ -233,7 +299,9 @@ with col2:
         )
 
 
+# ==========================================
 # TARJETA 3: EVOLUCIÓN DE PRECIOS
+# ==========================================
 
 with col3:
 
@@ -270,6 +338,6 @@ with col3:
 st.markdown("""
 <div class="footer">
     ENAEX CHILE | Dashboard de gestión de materias primas
+    | RÍO LOA
 </div>
 """, unsafe_allow_html=True)
-
