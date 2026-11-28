@@ -3,8 +3,10 @@ import pandas as pd
 import plotly.express as px
 
 from io import BytesIO
+
 from modules.navegacion import configurar_navegacion
 from modules.github_storage import descargar_archivo_github
+from modules.mrp_reader import obtener_indicadores_material
 
 
 # =====================================================
@@ -147,8 +149,6 @@ if faltantes:
 
 datos = datos_originales.copy()
 
-# Limpiar códigos de materiales
-
 datos["Material"] = (
     datos["Material"]
     .astype(str)
@@ -156,16 +156,12 @@ datos["Material"] = (
     .str.replace(r"\.0$", "", regex=True)
 )
 
-# Limpiar centro
-
 datos["Centro"] = (
     datos["Centro"]
     .astype(str)
     .str.strip()
     .str.upper()
 )
-
-# Filtrar Río Loa
 
 datos = datos[
     datos["Centro"] == CENTRO_RIO_LOA
@@ -181,8 +177,6 @@ if datos.empty:
     st.stop()
 
 
-# Normalizar clases de movimiento
-
 datos["Clase de movimiento"] = (
     datos["Clase de movimiento"]
     .astype(str)
@@ -190,20 +184,16 @@ datos["Clase de movimiento"] = (
     .str.strip()
 )
 
-# Considerar exclusivamente movimientos 261 y 262
-
 datos = datos[
     datos["Clase de movimiento"].isin(["261", "262"])
 ].copy()
 
-# Convertir cantidades
 
 datos["Ctd.en UM entrada"] = pd.to_numeric(
     datos["Ctd.en UM entrada"],
     errors="coerce"
 ).fillna(0)
 
-# Convertir fechas
 
 datos["Fecha contabiliz."] = pd.to_datetime(
     datos["Fecha contabiliz."],
@@ -211,11 +201,11 @@ datos["Fecha contabiliz."] = pd.to_datetime(
     dayfirst=True
 )
 
+
 datos = datos.dropna(
     subset=["Fecha contabiliz."]
 ).copy()
 
-# Limpiar descripciones
 
 if "Descripción material" in datos.columns:
 
@@ -230,10 +220,10 @@ else:
 
     datos["Descripción material"] = ""
 
-# Limpiar unidad de medida
 
 if "Un.medida de entrada" not in datos.columns:
     datos["Un.medida de entrada"] = "Sin unidad"
+
 
 datos["Un.medida de entrada"] = (
     datos["Un.medida de entrada"]
@@ -425,18 +415,13 @@ else:
 
 
 # =====================================================
-# 13. CALCULAR CONSUMO MENSUAL
+# 13. CALCULAR CONSUMO MENSUAL SAP
 # =====================================================
 
 datos_material["Mes"] = (
     datos_material["Fecha contabiliz."]
     .dt.to_period("M")
 )
-
-# Se conserva el signo original de SAP.
-# 261 normalmente registra cantidades negativas.
-# 262 registra anulaciones positivas.
-# El negativo de la suma representa el consumo neto.
 
 consumo_mensual = (
     datos_material
@@ -460,29 +445,64 @@ consumo_mensual = consumo_mensual.sort_values("Fecha")
 
 
 # =====================================================
-# 14. INDICADORES DEL MATERIAL
+# 14. OBTENER INDICADORES DEL MRP
 # =====================================================
 
-consumo_total = consumo_mensual["Consumo"].sum()
+try:
 
-consumo_promedio = (
-    consumo_mensual["Consumo"].mean()
-    if not consumo_mensual.empty
-    else 0
-)
+    indicadores_mrp = obtener_indicadores_material(
+        codigo_seleccionado
+    )
+
+except Exception as error:
+
+    st.error(
+        f"No fue posible obtener los indicadores del MRP: {error}"
+    )
+
+    st.stop()
+
+
+# =====================================================
+# 15. MOSTRAR LAS TRES CASILLAS
+# =====================================================
+
+st.markdown("")
+
+if indicadores_mrp is None:
+
+    stock_actual = None
+    consumo_real = None
+    mes_mrp = None
+
+else:
+
+    stock_actual = indicadores_mrp["stock_actual"]
+    consumo_real = indicadores_mrp["consumo_acumulado"]
+    mes_mrp = indicadores_mrp["mes_mrp"]
+
 
 cantidad_movimientos = len(datos_material)
+
+
+def formato_indicador(valor):
+
+    if valor is None or pd.isna(valor):
+        return "Sin información"
+
+    return f"{valor:,.2f} {unidad_seleccionada}"
+
 
 col1, col2, col3 = st.columns(3)
 
 col1.metric(
-    "Consumo acumulado",
-    f"{consumo_total:,.2f} {unidad_seleccionada}"
+    "Stock actual",
+    formato_indicador(stock_actual)
 )
 
 col2.metric(
-    "Consumo mensual promedio",
-    f"{consumo_promedio:,.2f} {unidad_seleccionada}"
+    "Consumo real acumulado",
+    formato_indicador(consumo_real)
 )
 
 col3.metric(
@@ -490,11 +510,20 @@ col3.metric(
     f"{cantidad_movimientos:,}"
 )
 
+
+if mes_mrp is not None:
+
+    st.caption(
+        "Stock actual y consumo acumulado obtenidos del MRP. "
+        f"Mes de referencia del consumo: {mes_mrp.strftime('%B %Y')}."
+    )
+
+
 st.divider()
 
 
 # =====================================================
-# 15. GRÁFICO DE CONSUMO MENSUAL
+# 16. GRÁFICO DE CONSUMO MENSUAL
 # =====================================================
 
 st.subheader("Evolución del consumo mensual")
@@ -566,7 +595,7 @@ st.divider()
 
 
 # =====================================================
-# 16. TABLA DE MOVIMIENTOS SAP
+# 17. TABLA DE MOVIMIENTOS SAP
 # =====================================================
 
 st.subheader("Detalle de movimientos SAP")
@@ -630,7 +659,7 @@ st.divider()
 
 
 # =====================================================
-# 17. PROYECCIÓN DE CONSUMO
+# 18. PROYECCIÓN DE CONSUMO
 # =====================================================
 
 st.subheader("Proyección de consumo")
@@ -642,8 +671,6 @@ st.markdown(
 
 if len(consumo_mensual) >= 1:
 
-    # Últimos tres meses disponibles con registros
-
     ultimos_tres = (
         consumo_mensual
         .tail(3)
@@ -654,8 +681,6 @@ if len(consumo_mensual) >= 1:
 
     ultimo_mes = consumo_mensual["Mes"].max()
 
-    # Punto de unión entre consumo real y proyección
-
     fecha_inicio = ultimo_mes.to_timestamp()
 
     proyeccion = pd.DataFrame({
@@ -665,8 +690,6 @@ if len(consumo_mensual) >= 1:
         ],
         "Tipo": ["Proyección"]
     })
-
-    # Proyectar los siguientes tres meses
 
     fechas_futuras = [
         (ultimo_mes + i).to_timestamp()
@@ -684,15 +707,11 @@ if len(consumo_mensual) >= 1:
         ignore_index=True
     )
 
-    # Datos reales
-
     reales = consumo_mensual[
         ["Fecha", "Consumo"]
     ].copy()
 
     reales["Tipo"] = "Consumo real"
-
-    # Unir las series
 
     datos_grafico = pd.concat(
         [
@@ -771,7 +790,7 @@ else:
 
 
 # =====================================================
-# 18. PIE DE PÁGINA
+# 19. PIE DE PÁGINA
 # =====================================================
 
 st.markdown(
