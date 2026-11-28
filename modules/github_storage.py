@@ -1,64 +1,75 @@
 
-import streamlit as st
-import requests
 import base64
-import zipfile
-import io
-
-from pathlib import PurePosixPath
+import requests
+import streamlit as st
 
 
-# =====================================================
-# 1. CONFIGURACIÓN DE GITHUB
-# =====================================================
+# =========================================================
+# 1. CONFIGURACIÓN
+# =========================================================
 
 def obtener_configuracion():
 
-    token = st.secrets["GITHUB_TOKEN"]
-    repo = st.secrets["GITHUB_REPO"]
+    try:
+        token = st.secrets["GITHUB_TOKEN"]
+        repositorio = st.secrets["GITHUB_REPO"]
+        rama = st.secrets.get("GITHUB_BRANCH", "main")
 
-    return token, repo
+        return token, repositorio, rama
+
+    except Exception as error:
+
+        raise ValueError(
+            "Faltan configuraciones de GitHub en Streamlit Secrets. "
+            "Verifica GITHUB_TOKEN y GITHUB_REPO."
+        ) from error
 
 
 def obtener_headers():
 
-    token, _ = obtener_configuracion()
+    token, _, _ = obtener_configuracion()
 
     return {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Cache-Control": "no-cache"
+        "X-GitHub-Api-Version": "2022-11-28"
     }
 
 
-# =====================================================
-# 2. DIRECCIÓN DEL ARCHIVO
-# =====================================================
+def construir_url(ruta):
 
-def obtener_url(ruta):
-
-    _, repo = obtener_configuracion()
-
-    ruta = str(PurePosixPath(ruta))
+    _, repositorio, _ = obtener_configuracion()
 
     return (
         f"https://api.github.com/repos/"
-        f"{repo}/contents/{ruta}"
+        f"{repositorio}/contents/{ruta}"
     )
 
 
-# =====================================================
-# 3. CONSULTAR INFORMACIÓN DEL ARCHIVO
-# =====================================================
+# =========================================================
+# 2. DESCARGAR ARCHIVOS DESDE GITHUB
+# =========================================================
 
-def obtener_info_archivo(ruta):
+def descargar_archivo_github(ruta):
+    """
+    Descarga archivos desde GitHub.
+
+    Para archivos pequeños utiliza el contenido Base64
+    de la API.
+
+    Para archivos grandes utiliza download_url,
+    evitando recibir contenido incompleto.
+    """
+
+    _, _, rama = obtener_configuracion()
+
+    url = construir_url(ruta)
 
     respuesta = requests.get(
-        obtener_url(ruta),
+        url,
         headers=obtener_headers(),
-        params={"ref": "main"},
-        timeout=30
+        params={"ref": rama},
+        timeout=60
     )
 
     if respuesta.status_code == 404:
@@ -67,196 +78,205 @@ def obtener_info_archivo(ruta):
     if respuesta.status_code != 200:
 
         raise Exception(
-            f"Error consultando GitHub: "
+            f"Error al consultar {ruta}: "
             f"{respuesta.status_code} - {respuesta.text}"
         )
 
-    return respuesta.json()
+    datos = respuesta.json()
 
+    # Caso 1: GitHub entrega el archivo en Base64
+    if (
+        datos.get("encoding") == "base64"
+        and datos.get("content")
+    ):
 
-def obtener_sha(ruta):
+        contenido = datos["content"].replace("\n", "")
 
-    informacion = obtener_info_archivo(ruta)
+        archivo_bytes = base64.b64decode(contenido)
 
-    if informacion is None:
-        return None
+        if archivo_bytes:
+            return archivo_bytes
 
-    return informacion.get("sha")
+    # Caso 2: archivo grande o contenido no disponible
+    download_url = datos.get("download_url")
 
-
-# =====================================================
-# 4. SUBIR O REEMPLAZAR ARCHIVOS
-# =====================================================
-
-def subir_archivo_github(archivo, ruta):
-
-    # Obtener contenido original
-
-    if hasattr(archivo, "getvalue"):
-        contenido = archivo.getvalue()
-    else:
-        contenido = bytes(archivo)
-
-    if not contenido:
-        raise Exception("El archivo seleccionado está vacío.")
-
-    # Validar que sea un Excel válido
-
-    if not zipfile.is_zipfile(io.BytesIO(contenido)):
-        raise Exception(
-            "El archivo no tiene una estructura Excel válida. "
-            "Verifica que sea un archivo XLSM."
-        )
-
-    contenido_base64 = base64.b64encode(
-        contenido
-    ).decode("utf-8")
-
-    # Consultar SHA actual y reemplazar
-
-    for intento in range(2):
-
-        sha_anterior = obtener_sha(ruta)
-
-        datos = {
-            "message": f"Actualización de archivo: {ruta}",
-            "content": contenido_base64,
-            "branch": "main"
-        }
-
-        if sha_anterior:
-            datos["sha"] = sha_anterior
-
-        respuesta = requests.put(
-            obtener_url(ruta),
-            headers=obtener_headers(),
-            json=datos,
-            timeout=180
-        )
-
-        # Si hubo conflicto, volver a consultar el SHA
-
-        if respuesta.status_code in (409, 422):
-
-            if intento == 0:
-                continue
-
-        if respuesta.status_code not in (200, 201):
-
-            raise Exception(
-                f"Error al guardar archivo en GitHub: "
-                f"{respuesta.status_code} - {respuesta.text}"
-            )
-
-        resultado = respuesta.json()
-
-        # Verificar que GitHub guardó la nueva versión
-
-        informacion_actual = obtener_info_archivo(ruta)
-
-        if informacion_actual is None:
-            raise Exception(
-                "GitHub respondió a la subida, "
-                "pero no se encontró el archivo posteriormente."
-            )
-
-        sha_guardado = resultado.get(
-            "content", {}
-        ).get("sha")
-
-        sha_actual = informacion_actual.get("sha")
-
-        if sha_guardado and sha_actual != sha_guardado:
-
-            raise Exception(
-                "La verificación del archivo no coincide "
-                "con la versión que se intentó guardar."
-            )
-
-        return {
-            "ruta": ruta,
-            "sha_archivo": sha_actual,
-            "sha_commit": resultado.get(
-                "commit", {}
-            ).get("sha"),
-            "mensaje_commit": resultado.get(
-                "commit", {}
-            ).get("message"),
-            "tamano": informacion_actual.get("size"),
-            "actualizado": True
-        }
-
-    raise Exception(
-        "No fue posible actualizar el archivo después "
-        "de reintentar la operación."
-    )
-
-
-# =====================================================
-# 5. DESCARGAR ARCHIVOS DESDE GITHUB
-# =====================================================
-
-def descargar_archivo_github(ruta):
-
-    informacion = obtener_info_archivo(ruta)
-
-    if informacion is None:
-        return None
-
-    url_descarga = informacion.get("download_url")
-
-    if not url_descarga:
+    if not download_url:
 
         raise Exception(
-            "GitHub no entregó la dirección de descarga."
+            f"GitHub no proporcionó una URL de descarga "
+            f"para el archivo {ruta}."
         )
 
-    # Incorporar SHA a la URL para evitar una versión antigua
-    # almacenada en caché.
-
-    url_descarga = (
-        f"{url_descarga}?version={informacion.get('sha')}"
-    )
-
-    descarga = requests.get(
-        url_descarga,
+    respuesta_archivo = requests.get(
+        download_url,
         headers={
-            "Authorization": (
-                f"Bearer {obtener_configuracion()[0]}"
-            ),
-            "Accept": "application/octet-stream",
-            "Cache-Control": "no-cache"
+            "Authorization": obtener_headers()["Authorization"],
+            "Accept": "application/octet-stream"
         },
-        timeout=180
+        timeout=120
     )
 
-    if descarga.status_code != 200:
+    if respuesta_archivo.status_code != 200:
 
         raise Exception(
-            f"Error descargando archivo: "
-            f"{descarga.status_code}"
+            f"No fue posible descargar el archivo original: "
+            f"{respuesta_archivo.status_code}"
         )
 
-    contenido = descarga.content
+    contenido = respuesta_archivo.content
 
     if not contenido:
-        raise Exception("El archivo descargado está vacío.")
+
+        raise Exception(
+            f"El archivo descargado está vacío: {ruta}"
+        )
 
     return contenido
 
 
-# =====================================================
-# 6. COMPROBAR CONEXIÓN
-# =====================================================
+# =========================================================
+# 3. SUBIR O ACTUALIZAR ARCHIVOS EN GITHUB
+# =========================================================
 
-def comprobar_conexion():
+def subir_archivo_github(
+    ruta,
+    contenido,
+    mensaje="Actualización desde dashboard"
+):
+    """
+    Sube un archivo nuevo o reemplaza uno existente.
 
-    _, repo = obtener_configuracion()
+    Parámetros:
+    ruta: ubicación del archivo en GitHub.
+    contenido: contenido binario del archivo.
+    mensaje: mensaje del commit.
+    """
 
-    respuesta = requests.get(
-        f"https://api.github.com/repos/{repo}",
-        headers=obtener_headers(),
-        timeout=30
+    _, _, rama = obtener_configuracion()
+
+    url = construir_url(ruta)
+
+    headers = obtener_headers()
+
+    # Comprobar que el contenido sea binario
+    if isinstance(contenido, str):
+
+        raise TypeError(
+            "El contenido debe ser bytes, no texto."
+        )
+
+    if not isinstance(contenido, bytes):
+
+        raise TypeError(
+            "El archivo debe enviarse en formato bytes."
+        )
+
+    if not contenido:
+
+        raise ValueError(
+            "El archivo seleccionado está vacío."
+        )
+
+    # Consultar si el archivo ya existe
+    respuesta_actual = requests.get(
+        url,
+        headers=headers,
+        params={"ref": rama},
+        timeout=60
     )
 
-    return respuesta.status_code == 200
+    sha = None
+
+    if respuesta_actual.status_code == 200:
+
+        sha = respuesta_actual.json().get("sha")
+
+    elif respuesta_actual.status_code != 404:
+
+        raise Exception(
+            "No se pudo verificar el archivo en GitHub: "
+            f"{respuesta_actual.status_code} - "
+            f"{respuesta_actual.text}"
+        )
+
+    # Convertir contenido a Base64
+    contenido_base64 = base64.b64encode(
+        contenido
+    ).decode("utf-8")
+
+    datos = {
+        "message": mensaje,
+        "content": contenido_base64,
+        "branch": rama
+    }
+
+    # Si existe, actualizar utilizando su SHA
+    if sha:
+        datos["sha"] = sha
+
+    respuesta = requests.put(
+        url,
+        headers=headers,
+        json=datos,
+        timeout=180
+    )
+
+    if respuesta.status_code not in (200, 201):
+
+        raise Exception(
+            f"Error al guardar {ruta}: "
+            f"{respuesta.status_code} - "
+            f"{respuesta.text}"
+        )
+
+    return True
+
+
+# =========================================================
+# 4. VERIFICAR CONEXIÓN CON GITHUB
+# =========================================================
+
+def verificar_conexion_github():
+
+    try:
+
+        _, repositorio, _ = obtener_configuracion()
+
+        url = (
+            f"https://api.github.com/repos/{repositorio}"
+        )
+
+        respuesta = requests.get(
+            url,
+            headers=obtener_headers(),
+            timeout=30
+        )
+
+        if respuesta.status_code == 200:
+
+            return True, "Conexión con GitHub exitosa."
+
+        return False, (
+            f"No se pudo conectar con GitHub. "
+            f"Código: {respuesta.status_code}. "
+            f"Detalle: {respuesta.text}"
+        )
+
+    except Exception as error:
+
+        return False, str(error)
+
+
+# =========================================================
+# 5. RUTAS DE ARCHIVOS DE RÍO LOA
+# =========================================================
+
+RUTA_MRP = "data/MRP/Planificacion_MRP.xlsm"
+
+RUTA_CONSUMO = (
+    "data/CONSUMO/consumo_rio_loa.xlsx"
+)
+
+RUTA_PRECIOS = (
+    "data/PRECIOS/precios_rio_loa.xlsx"
+)
