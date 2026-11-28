@@ -1,15 +1,18 @@
+
 import io
 import re
 import unicodedata
+
 import pandas as pd
 import streamlit as st
 
 from openpyxl import load_workbook
+
 from modules.github_storage import descargar_archivo_github
 
 
 # =====================================================
-# 1. CONFIGURACIÓN
+# 1. CONFIGURACIÓN GENERAL
 # =====================================================
 
 RUTA_MRP = "data/MRP/Planificacion_MRP.xlsm"
@@ -49,16 +52,28 @@ COLUMNAS_MRP = [
 
 def limpiar_texto(valor):
 
-    if pd.isna(valor):
+    if valor is None:
         return ""
+
+    try:
+        if pd.isna(valor):
+            return ""
+    except (TypeError, ValueError):
+        pass
 
     return str(valor).strip()
 
 
 def normalizar_codigo(valor):
 
-    if pd.isna(valor):
+    if valor is None:
         return ""
+
+    try:
+        if pd.isna(valor):
+            return ""
+    except (TypeError, ValueError):
+        pass
 
     codigo = str(valor).strip()
 
@@ -82,20 +97,26 @@ def normalizar_encabezado(valor):
 
 def convertir_numero(valor):
 
-    if valor is None or pd.isna(valor):
+    if valor is None:
         return None
+
+    try:
+        if pd.isna(valor):
+            return None
+    except (TypeError, ValueError):
+        pass
 
     if isinstance(valor, (int, float)):
         return float(valor)
 
     texto = str(valor).strip()
 
-    if not texto or texto in ["-", "—"]:
+    if texto in ["", "-", "—", "None"]:
         return None
 
     texto = texto.replace(" ", "")
 
-    # Formato numérico chileno: 146.933,00
+    # Formato chileno: 146.933,00
     if "," in texto and "." in texto:
         texto = texto.replace(".", "").replace(",", ".")
 
@@ -104,6 +125,7 @@ def convertir_numero(valor):
 
     try:
         return float(texto)
+
     except (ValueError, TypeError):
         return None
 
@@ -277,49 +299,120 @@ def obtener_resumen_mrp():
 
 
 # =====================================================
-# 7. BUSCAR ESTRUCTURA DE LA HOJA MRP
+# 7. IDENTIFICAR ENCABEZADOS DE LA HOJA MRP
 # =====================================================
 
 def encontrar_columnas_hoja_mrp(hoja):
 
-    # Buscar los encabezados en las primeras filas.
-    # No se depende de una fila fija.
+    # Buscar encabezados en las primeras 20 filas.
 
-    for numero_fila in range(1, min(20, hoja.max_row) + 1):
+    for numero_fila, fila in enumerate(
+        hoja.iter_rows(
+            min_row=1,
+            max_row=20,
+            values_only=True
+        ),
+        start=1
+    ):
 
         encabezados = {}
 
-        for columna in range(1, hoja.max_column + 1):
-
-            valor = hoja.cell(
-                numero_fila,
-                columna
-            ).value
+        for indice, valor in enumerate(fila):
 
             nombre = normalizar_encabezado(valor)
 
             if nombre:
-                encabezados[nombre] = columna
+                encabezados[nombre] = indice
 
-        if (
-            "centro" in encabezados
-            and "material" in encabezados
-            and "descripcion del material" in encabezados
-            and "stock actual" in encabezados
-            and "mrp" in encabezados
+        columnas_necesarias = [
+            "centro",
+            "material",
+            "descripcion del material",
+            "stock actual",
+            "mrp"
+        ]
+
+        if all(
+            nombre in encabezados
+            for nombre in columnas_necesarias
         ):
 
-            return numero_fila, encabezados
+            return (
+                numero_fila,
+                encabezados,
+                fila
+            )
 
     raise ValueError(
-        "No se encontraron los encabezados Centro, Material, "
-        "Descripción del material, Stock Actual y MRP "
+        "No se encontraron los encabezados necesarios "
         "en la hoja MRP."
     )
 
 
 # =====================================================
-# 8. CARGAR INDICADORES DE LA HOJA MRP
+# 8. IDENTIFICAR LA COLUMNA DEL MES
+# =====================================================
+
+def identificar_columnas_meses(
+    valores_encabezado,
+    columna_mrp
+):
+
+    meses = []
+
+    patron_mes = (
+        r"^(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)"
+        r"[- /]\d{2,4}$"
+    )
+
+    for indice, valor in enumerate(valores_encabezado):
+
+        if indice <= columna_mrp:
+            continue
+
+        if valor is None:
+            continue
+
+        # Encabezado como fecha real de Excel.
+
+        if (
+            hasattr(valor, "year")
+            and hasattr(valor, "month")
+        ):
+
+            meses.append({
+                "indice": indice,
+                "valor": valor,
+                "orden": (
+                    valor.year * 100 + valor.month
+                )
+            })
+
+        # Encabezado como texto: nov-26, dic-26, etc.
+
+        elif isinstance(valor, str):
+
+            texto = valor.strip().lower()
+
+            if re.match(patron_mes, texto):
+
+                meses.append({
+                    "indice": indice,
+                    "valor": valor,
+                    "orden": texto
+                })
+
+    if not meses:
+        raise ValueError(
+            "No se encontraron columnas mensuales "
+            "a la derecha de la columna MRP."
+        )
+
+    return meses
+
+
+# =====================================================
+# 9. CARGAR INDICADORES DE LA HOJA MRP
 # =====================================================
 
 @st.cache_data(ttl=60)
@@ -344,204 +437,186 @@ def cargar_indicadores_mrp():
 
         if "MRP" not in libro.sheetnames:
             raise ValueError(
-                "No se encontró la hoja MRP en el archivo."
+                "No se encontró la hoja MRP."
             )
 
         hoja = libro["MRP"]
 
-        fila_encabezados, encabezados = (
-            encontrar_columnas_hoja_mrp(hoja)
-        )
+        # -------------------------------------------------
+        # A. IDENTIFICAR ENCABEZADOS
+        # -------------------------------------------------
+
+        (
+            fila_encabezados,
+            encabezados,
+            valores_encabezado
+        ) = encontrar_columnas_hoja_mrp(hoja)
 
         col_centro = encabezados["centro"]
         col_material = encabezados["material"]
-        col_descripcion = encabezados["descripcion del material"]
+        col_descripcion = encabezados[
+            "descripcion del material"
+        ]
         col_stock = encabezados["stock actual"]
-        col_tipo_mrp = encabezados["mrp"]
+        col_tipo = encabezados["mrp"]
 
         # -------------------------------------------------
-        # Identificar la columna del último mes disponible
+        # B. IDENTIFICAR EL ÚLTIMO MES
         # -------------------------------------------------
 
-        columnas_meses = []
+        meses = identificar_columnas_meses(
+            valores_encabezado,
+            col_tipo
+        )
 
-        for columna in range(
-            col_tipo_mrp + 1,
-            hoja.max_column + 1
-        ):
+        # Tomar el último mes según el orden de las columnas.
 
-            valor = hoja.cell(
-                fila_encabezados,
-                columna
-            ).value
+        mes_actual = meses[-1]
 
-            if valor is None:
-                continue
+        columna_mes_actual = mes_actual["indice"]
 
-            # Encabezados que son fechas reales de Excel.
+        nombre_mes_actual = mes_actual["valor"]
 
-            if hasattr(valor, "year") and hasattr(valor, "month"):
+        # Limitar la lectura hasta la columna necesaria.
 
-                columnas_meses.append(
-                    (columna, valor)
-                )
+        max_columna_lectura = max(
+            col_centro,
+            col_material,
+            col_descripcion,
+            col_stock,
+            col_tipo,
+            columna_mes_actual
+        ) + 1
 
-            # Encabezados escritos como nov-26, dic-26, etc.
-
-            elif isinstance(valor, str):
-
-                texto = valor.strip().lower()
-
-                if re.match(
-                    r"^(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[- /]\d{2,4}$",
-                    texto
-                ):
-
-                    columnas_meses.append(
-                        (columna, texto)
-                    )
-
-        if not columnas_meses:
-
-            raise ValueError(
-                "No se encontraron encabezados mensuales "
-                "a la derecha de la columna MRP."
-            )
-
-        # La última columna mensual es la más reciente
-        # dentro del archivo.
-
-        columna_mes_actual, mes_actual = columnas_meses[-1]
+        # -------------------------------------------------
+        # C. RECORRER LA HOJA UNA SOLA VEZ
+        # -------------------------------------------------
 
         registros = []
 
-        # -------------------------------------------------
-        # Recorrer filas y reconocer los bloques de materiales
-        # -------------------------------------------------
+        material_actual = None
 
-        fila_inicio = fila_encabezados + 1
-
-        for fila in range(
-            fila_inicio,
-            hoja.max_row + 1
+        for fila in hoja.iter_rows(
+            min_row=fila_encabezados + 1,
+            max_col=max_columna_lectura,
+            values_only=True
         ):
 
             centro = normalizar_codigo(
-                hoja.cell(fila, col_centro).value
+                fila[col_centro]
+                if len(fila) > col_centro
+                else None
             ).upper()
 
             material = normalizar_codigo(
-                hoja.cell(fila, col_material).value
+                fila[col_material]
+                if len(fila) > col_material
+                else None
             )
-
-            if centro != CENTRO_RIO_LOA or not material:
-                continue
 
             descripcion = limpiar_texto(
-                hoja.cell(fila, col_descripcion).value
-            )
-
-            stock = convertir_numero(
-                hoja.cell(fila, col_stock).value
+                fila[col_descripcion]
+                if len(fila) > col_descripcion
+                else None
             )
 
             tipo = normalizar_encabezado(
-                hoja.cell(fila, col_tipo_mrp).value
+                fila[col_tipo]
+                if len(fila) > col_tipo
+                else None
             )
 
-            # La fila principal corresponde a Cons. Proy.
-            # Si el valor está vacío, igualmente se conserva
-            # el registro para no perder el material.
+            # ---------------------------------------------
+            # D. DETECTAR UNA NUEVA MATERIA PRIMA
+            # ---------------------------------------------
 
-            if tipo not in ["cons proy", "consumo proy", ""]:
+            if centro == CENTRO_RIO_LOA and material:
+
+                material_actual = None
+
+                if tipo in [
+                    "cons proy",
+                    "consumo proy",
+                    ""
+                ]:
+
+                    stock = convertir_numero(
+                        fila[col_stock]
+                        if len(fila) > col_stock
+                        else None
+                    )
+
+                    material_actual = {
+
+                        "Centro": centro,
+
+                        "Material": material,
+
+                        "Descripción": descripcion,
+
+                        "Stock Actual": stock,
+
+                        "Consumo real acumulado": None,
+
+                        "Mes MRP": nombre_mes_actual
+
+                    }
+
+                    registros.append(material_actual)
 
                 continue
 
-            consumo_acumulado = None
+            # ---------------------------------------------
+            # E. BUSCAR CONS. ACU EN EL BLOQUE ACTUAL
+            # ---------------------------------------------
 
-            # Buscar Cons. Acu dentro del bloque del material.
-            # Las filas secundarias normalmente no repiten
-            # el centro ni el código del material.
+            if material_actual is not None:
 
-            for fila_secundaria in range(
-                fila + 1,
-                hoja.max_row + 1
-            ):
+                if tipo in [
+                    "cons acu",
+                    "consumo acu"
+                ]:
 
-                siguiente_centro = normalizar_codigo(
-                    hoja.cell(
-                        fila_secundaria,
-                        col_centro
-                    ).value
-                ).upper()
-
-                siguiente_material = normalizar_codigo(
-                    hoja.cell(
-                        fila_secundaria,
-                        col_material
-                    ).value
-                )
-
-                # Si comienza otro material, termina el bloque actual.
-
-                if siguiente_centro or siguiente_material:
-                    break
-
-                etiqueta = normalizar_encabezado(
-                    hoja.cell(
-                        fila_secundaria,
-                        col_tipo_mrp
-                    ).value
-                )
-
-                if etiqueta in ["cons acu", "consumo acu"]:
-
-                    consumo_acumulado = convertir_numero(
-                        hoja.cell(
-                            fila_secundaria,
-                            columna_mes_actual
-                        ).value
+                    valor_consumo = (
+                        fila[columna_mes_actual]
+                        if len(fila) > columna_mes_actual
+                        else None
                     )
 
-                    break
+                    material_actual[
+                        "Consumo real acumulado"
+                    ] = convertir_numero(
+                        valor_consumo
+                    )
 
-            registros.append({
+                    material_actual = None
 
-                "Centro": centro,
-
-                "Material": material,
-
-                "Descripción": descripcion,
-
-                "Stock Actual": stock,
-
-                "Consumo real acumulado": consumo_acumulado,
-
-                "Mes MRP": mes_actual
-
-            })
+        # -------------------------------------------------
+        # F. CONSTRUIR RESULTADO
+        # -------------------------------------------------
 
         indicadores = pd.DataFrame(registros)
 
         if indicadores.empty:
             return indicadores
 
-        # En caso de registros repetidos, conservar
-        # el último registro leído para cada material.
-
         indicadores = indicadores.drop_duplicates(
             subset=["Centro", "Material"],
             keep="last"
         )
 
-        return indicadores.reset_index(drop=True)
+        indicadores = indicadores.reset_index(
+            drop=True
+        )
+
+        return indicadores
 
     finally:
         libro.close()
 
 
 # =====================================================
-# 9. OBTENER INDICADORES DE UN MATERIAL
+# 10. OBTENER INDICADORES DE UN MATERIAL
 # =====================================================
 
 def obtener_indicadores_material(material):
@@ -559,26 +634,35 @@ def obtener_indicadores_material(material):
     ]
 
     if resultado.empty:
-
         return None
 
     fila = resultado.iloc[0]
 
     return {
+
         "stock_actual": fila["Stock Actual"],
-        "consumo_acumulado": fila["Consumo real acumulado"],
+
+        "consumo_acumulado": fila[
+            "Consumo real acumulado"
+        ],
+
         "mes_mrp": fila["Mes MRP"],
+
         "descripcion": fila["Descripción"]
+
     }
 
 
 # =====================================================
-# 10. LIMPIAR CACHÉ DEL MRP
+# 11. ACTUALIZAR CACHÉ DEL MRP
 # =====================================================
 
 def actualizar_mrp():
 
     cargar_mrp.clear()
+
     obtener_datos_rio_loa.clear()
+
     obtener_materias_primas_activas.clear()
+
     cargar_indicadores_mrp.clear()
